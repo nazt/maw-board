@@ -8,9 +8,11 @@ export type Settings = {
   scrollback: number;
   background: string; // board background color (CSS color string)
   tileCols: number; // remembered custom column count for the layout menu
+  snippets: string[]; // saved command snippets, click-to-paste into a terminal
 };
 
 export const DEFAULT_BACKGROUND = "#0e0e10";
+export const DEFAULT_SNIPPETS = ["ls -la", "git status", "docker ps", "df -h"];
 
 const storedSettings = persisted<Partial<Settings>>("sshx-settings-store", {});
 
@@ -42,12 +44,17 @@ export const settings: Readable<Settings> = derived(
       tileCols = 2;
     }
 
+    const snippets = Array.isArray($storedSettings.snippets)
+      ? $storedSettings.snippets.filter((s) => typeof s === "string")
+      : DEFAULT_SNIPPETS;
+
     return {
       name,
       theme,
       scrollback,
       background,
       tileCols,
+      snippets,
     };
   },
 );

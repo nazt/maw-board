@@ -41,6 +41,7 @@
   import CameraPreview from "./ui/CameraPreview.svelte";
   import FileExplorer from "./ui/FileExplorer.svelte";
   import MarkdownDoc from "./ui/MarkdownDoc.svelte";
+  import SnippetBar from "./ui/SnippetBar.svelte";
   import Avatars from "./ui/Avatars.svelte";
   import LiveCursor from "./ui/LiveCursor.svelte";
   import { slide } from "./action/slide";
@@ -82,6 +83,7 @@
   let settingsOpen = false; // @hmr:keep
   let showExplorer = false; // @hmr:keep
   let showDoc = false; // @hmr:keep
+  let showSnippets = false; // @hmr:keep
 
   // Auto-hiding toolbar (Apple menu-bar style): fades out after inactivity,
   // reveals when the pointer nears the top edge or hovers it.
@@ -479,6 +481,23 @@
     } else {
       handleInput(originId, data);
     }
+  }
+
+  // Paste a saved snippet into the focused terminal (honours broadcast + lock).
+  function pasteSnippet(text: string) {
+    if (hasWriteAccess === false || lockedForMe) {
+      makeToast({ kind: "info", message: "Read-only mode — can't paste." });
+      return;
+    }
+    const target = focused[0];
+    if (target === undefined) {
+      makeToast({
+        kind: "info",
+        message: "Click a terminal first, then paste.",
+      });
+      return;
+    }
+    routeInput(target, new TextEncoder().encode(text));
   }
 
   // Stupid hack to preserve input focus when terminals are reordered.
@@ -1076,6 +1095,7 @@
       on:create={handleCreate}
       on:lock={toggleLock}
       on:broadcast={() => (broadcastMode = !broadcastMode)}
+      on:snippets={() => (showSnippets = !showSnippets)}
       on:tile={({ detail }) => tileWindows(detail)}
       on:center={handleCenter}
       on:clear={handleClear}
@@ -1171,6 +1191,12 @@
   {#if showExplorer}
     <FileExplorer on:close={() => (showExplorer = false)} />
   {/if}
+
+  <SnippetBar
+    open={showSnippets}
+    on:paste={({ detail }) => pasteSnippet(detail)}
+    on:close={() => (showSnippets = false)}
+  />
 
   {#if showDoc}
     <MarkdownDoc

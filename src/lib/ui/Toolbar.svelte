@@ -10,6 +10,7 @@
     FileTextIcon,
     FilmIcon,
     FolderIcon,
+    ClipboardIcon,
     GridIcon,
     LockIcon,
     UnlockIcon,
@@ -39,6 +40,7 @@
     create: void;
     lock: void;
     broadcast: void;
+    snippets: void;
     tile: string | number;
     center: void;
     clear: void;
@@ -159,6 +161,13 @@
           : "Broadcast input to all terminals at once"}
       >
         <RadioIcon strokeWidth={1.5} class="p-0.5" />
+      </button>
+      <button
+        class="icon-button"
+        on:click={() => dispatch("snippets")}
+        title="Command snippets — click to paste"
+      >
+        <ClipboardIcon strokeWidth={1.5} class="p-0.5" />
       </button>
       <button
         class="icon-button"
