@@ -43,6 +43,25 @@ pub struct WsUser {
     pub can_write: bool,
 }
 
+/// A collaborative board item (image or live screen-share frame) — a maw share
+/// workboard extension on top of sshx's terminals.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardItem {
+    /// Stable item id (client-generated).
+    pub id: String,
+    /// Item kind: "image" or "stream".
+    pub kind: String,
+    /// World-space x position.
+    pub x: i32,
+    /// World-space y position.
+    pub y: i32,
+    /// Render width in pixels.
+    pub w: u32,
+    /// Data URL of the image / current stream frame.
+    pub data_url: String,
+}
+
 /// A real-time message sent from the server over WebSocket.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +84,17 @@ pub enum WsServer {
     ShellLatency(u64),
     /// Echo back a timestamp, for the the client's own latency measurement.
     Pong(u64),
+    // ── maw share workboard extensions ──
+    /// Broadcast a push-to-talk voice clip from a user (opus/webm bytes).
+    VoiceData(Uid, Bytes),
+    /// Full board snapshot, sent to a client on join (replay).
+    Board(Vec<BoardItem>),
+    /// A board item was added or updated (image add, stream frame).
+    BoardPut(BoardItem),
+    /// A board item moved to a new position: `(id, x, y)`.
+    BoardMove(String, i32, i32),
+    /// A board item was removed: `id`.
+    BoardDelete(String),
     /// Alert the client of an application error.
     Error(String),
 }
@@ -96,4 +126,13 @@ pub enum WsClient {
     Chat(String),
     /// Send a ping to the server, for latency measurement.
     Ping(u64),
+    // ── maw share workboard extensions ──
+    /// Push-to-talk: send a voice clip (opus/webm bytes) to relay to the room.
+    Voice(Bytes),
+    /// Add or update a board item (image, or a stream frame).
+    BoardPut(BoardItem),
+    /// Move a board item to a new position: `(id, x, y)`.
+    BoardMove(String, i32, i32),
+    /// Remove a board item: `id`.
+    BoardDelete(String),
 }

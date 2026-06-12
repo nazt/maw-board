@@ -17,6 +17,16 @@ export type WsUser = {
   canWrite: boolean;
 };
 
+/** A collaborative board item (image / live stream frame) — maw share extension. */
+export type BoardItem = {
+  id: string;
+  kind: string; // "image" | "stream"
+  x: number;
+  y: number;
+  w: number;
+  dataUrl: string;
+};
+
 /** Server message type, see the Rust version. */
 export type WsServer = {
   hello?: [Uid, string];
@@ -28,6 +38,12 @@ export type WsServer = {
   hear?: [Uid, string, string];
   shellLatency?: number | bigint;
   pong?: number | bigint;
+  // ── maw share workboard extensions ──
+  voiceData?: [Uid, Uint8Array];
+  board?: BoardItem[];
+  boardPut?: BoardItem;
+  boardMove?: [string, number, number];
+  boardDelete?: string;
   error?: string;
 };
 
@@ -44,4 +60,9 @@ export type WsClient = {
   subscribe?: [Sid, number];
   chat?: string;
   ping?: bigint;
+  // ── maw share workboard extensions ──
+  voice?: Uint8Array;
+  boardPut?: BoardItem;
+  boardMove?: [string, number, number];
+  boardDelete?: string;
 };
