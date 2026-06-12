@@ -222,12 +222,42 @@
           rtcMesh = new RtcMesh(
             userId,
             (target, payload) => srocket?.send({ signal: [target, payload] }),
-            (uid, track) => {
+            (uid, track, streams) => {
               if (track.kind === "audio") {
                 const audio = new Audio();
                 audio.srcObject = new MediaStream([track]);
                 audio.play().catch(() => {});
                 remoteAudios[uid] = audio;
+              } else if (track.kind === "video") {
+                // Remote screen-share or camera — render into a <video> and
+                // capture frames into the stream tile's objectURL.
+                const video = document.createElement("video");
+                video.srcObject = streams[0] ?? new MediaStream([track]);
+                video.muted = true;
+                video.play().catch(() => {});
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+                const interval = window.setInterval(() => {
+                  if (video.videoWidth && ctx) {
+                    const s = Math.min(1, 640 / video.videoWidth);
+                    canvas.width = Math.round(video.videoWidth * s);
+                    canvas.height = Math.round(video.videoHeight * s);
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob((blob) => {
+                      if (blob) {
+                        const key = `rtc-video-${uid}`;
+                        setStreamFrame(key, new Uint8Array(0));
+                        const url = URL.createObjectURL(blob);
+                        if (streamSrcs[key]) URL.revokeObjectURL(streamSrcs[key]);
+                        streamSrcs = { ...streamSrcs, [key]: url };
+                      }
+                    }, "image/jpeg", 0.7);
+                  }
+                }, 200);
+                track.addEventListener("ended", () => {
+                  window.clearInterval(interval);
+                  video.srcObject = null;
+                });
               }
             },
           );
@@ -590,13 +620,33 @@
     };
   });
 
-  // Screen share: place a placeholder tile, then stream frames to it at ~3 fps.
+  // Screen share: getDisplayMedia → send video track via WebRTC to peers +
+  // place a board tile (WS StreamFrame fallback for board preview at ~3fps).
+  let displayStream: MediaStream | null = null;
+
   async function handleStream() {
     if (hasWriteAccess === false) return;
     if (stream) {
       stopStream();
       return;
     }
+    let capture: MediaStream;
+    try {
+      capture = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 30 },
+        audio: false,
+      });
+    } catch {
+      return; // user cancelled the picker
+    }
+
+    displayStream = capture;
+    const videoTrack = capture.getVideoTracks()[0];
+
+    // Add track to WebRTC mesh — peers get full-quality video P2P.
+    rtcMesh?.addTrack(videoTrack);
+
+    // Board tile placeholder for positioning + late-join snapshot.
     const id = crypto.randomUUID();
     const [x, y] = nextBoardPos();
     const placeholder: BoardItem = {
@@ -608,14 +658,22 @@
       h: 270,
       dataUrl: "",
     };
+
+    // Low-fps WS frame fallback for board tile preview.
     const controller = await startScreenShare(
       (bytes) => {
-        setStreamFrame(id, bytes); // show my own share locally
+        setStreamFrame(id, bytes);
         srocket?.send({ streamFrame: [id, bytes] });
       },
-      () => stopStream(), // browser's own "Stop sharing" control
+      () => stopStream(),
     );
-    if (!controller) return; // user cancelled the picker
+    if (!controller) {
+      capture.getTracks().forEach((t) => t.stop());
+      return;
+    }
+
+    videoTrack.addEventListener("ended", () => stopStream());
+
     stream = controller;
     myStreamId = id;
     streamActive = true;
@@ -627,6 +685,13 @@
     stream?.stop();
     stream = null;
     streamActive = false;
+    if (displayStream) {
+      for (const track of displayStream.getTracks()) {
+        rtcMesh?.removeTrack(track);
+        track.stop();
+      }
+      displayStream = null;
+    }
     if (myStreamId) {
       srocket?.send({ boardDelete: myStreamId });
       removeBoardItem(myStreamId);
