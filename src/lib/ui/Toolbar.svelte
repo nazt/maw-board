@@ -2,6 +2,7 @@
   import { createEventDispatcher } from "svelte";
   import StatusBar from "./StatusBar.svelte";
   import {
+    Edit2Icon,
     FileTextIcon,
     FilmIcon,
     FolderIcon,
@@ -29,6 +30,7 @@
     note: void;
     video: void;
     files: void;
+    doc: void;
     chat: void;
     settings: void;
     networkInfo: void;
@@ -79,6 +81,13 @@
         title="File explorer"
       >
         <FolderIcon strokeWidth={1.5} class="p-0.5" />
+      </button>
+      <button
+        class="icon-button"
+        on:click={() => dispatch("doc")}
+        title="Shared document"
+      >
+        <Edit2Icon strokeWidth={1.5} class="p-0.5" />
       </button>
       <button class="icon-button" on:click={() => dispatch("chat")}>
         <MessageSquareIcon strokeWidth={1.5} class="p-0.5" />

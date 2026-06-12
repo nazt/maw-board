@@ -40,6 +40,7 @@
   import XTerm from "./ui/XTerm.svelte";
   import CameraPreview from "./ui/CameraPreview.svelte";
   import FileExplorer from "./ui/FileExplorer.svelte";
+  import MarkdownDoc from "./ui/MarkdownDoc.svelte";
   import Avatars from "./ui/Avatars.svelte";
   import LiveCursor from "./ui/LiveCursor.svelte";
   import { slide } from "./action/slide";
@@ -80,6 +81,7 @@
   let showChat = false; // @hmr:keep
   let settingsOpen = false; // @hmr:keep
   let showExplorer = false; // @hmr:keep
+  let showDoc = false; // @hmr:keep
   let showNetworkInfo = false; // @hmr:keep
 
   onMount(() => {
@@ -591,6 +593,26 @@
     srocket?.send({ boardPut: item });
   }
 
+  // Shared markdown document — a singleton board item synced to all peers
+  // (hidden from the board canvas; shown only in the Document panel).
+  const DOC_ID = "__shared_doc__";
+  $: docText = boardItems.find((it) => it.id === DOC_ID)?.dataUrl ?? "";
+
+  function handleDocEdit(text: string) {
+    if (hasWriteAccess === false) return;
+    const item: BoardItem = {
+      id: DOC_ID,
+      kind: "doc",
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+      dataUrl: text,
+    };
+    upsertBoardItem(item);
+    srocket?.send({ boardPut: item });
+  }
+
   // Persist a note's edited text to peers.
   function handleNoteEdit(id: string, text: string) {
     const item = boardItems.find((it) => it.id === id);
@@ -861,6 +883,7 @@
       on:note={addNote}
       on:video={handleVideoPick}
       on:files={() => (showExplorer = !showExplorer)}
+      on:doc={() => (showDoc = !showDoc)}
       on:chat={() => {
         showChat = !showChat;
         newMessages = false;
@@ -909,6 +932,15 @@
 
   {#if showExplorer}
     <FileExplorer on:close={() => (showExplorer = false)} />
+  {/if}
+
+  {#if showDoc}
+    <MarkdownDoc
+      text={docText}
+      readonly={hasWriteAccess === false}
+      on:edit={({ detail }) => handleDocEdit(detail)}
+      on:close={() => (showDoc = false)}
+    />
   {/if}
 
   {#if cameraActive && cameraStream}
