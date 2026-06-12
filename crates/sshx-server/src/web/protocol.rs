@@ -43,8 +43,10 @@ pub struct WsUser {
     pub can_write: bool,
 }
 
-/// A collaborative board item (image or live screen-share frame) — a maw share
-/// workboard extension on top of sshx's terminals.
+/// A collaborative board item — a maw share workboard extension on top of sshx's
+/// terminals. Persisted in the session snapshot. For `kind:"stream"` this is just
+/// a placeholder tile (no frame data); live frames flow ephemerally via
+/// `StreamFrame` so the snapshot stays small and the broadcast channel can't flood.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardItem {
@@ -58,7 +60,9 @@ pub struct BoardItem {
     pub y: i32,
     /// Render width in pixels.
     pub w: u32,
-    /// Data URL of the image / current stream frame.
+    /// Render height in pixels.
+    pub h: u32,
+    /// Data URL of the image (empty for `kind:"stream"` placeholders).
     pub data_url: String,
 }
 
@@ -86,8 +90,12 @@ pub enum WsServer {
     Pong(u64),
     // ── maw share workboard extensions ──
     /// Broadcast a push-to-talk voice clip from a user (opus/webm bytes).
+    /// Ephemeral — relayed, never persisted.
     VoiceData(Uid, Bytes),
-    /// Full board snapshot, sent to a client on join (replay).
+    /// Broadcast one live screen-share frame `(uid, stream_id, jpeg_bytes)`.
+    /// Ephemeral — relayed, never persisted (keeps the snapshot small).
+    StreamFrame(Uid, String, Bytes),
+    /// Full board snapshot (images + stream placeholder tiles), sent on join.
     Board(Vec<BoardItem>),
     /// A board item was added or updated (image add, stream frame).
     BoardPut(BoardItem),
@@ -129,7 +137,10 @@ pub enum WsClient {
     // ── maw share workboard extensions ──
     /// Push-to-talk: send a voice clip (opus/webm bytes) to relay to the room.
     Voice(Bytes),
-    /// Add or update a board item (image, or a stream frame).
+    /// Send one live screen-share frame `(stream_id, jpeg_bytes)` to relay
+    /// (ephemeral, client throttles to ~3 fps).
+    StreamFrame(String, Bytes),
+    /// Add or update a board item (image add, or a stream placeholder tile).
     BoardPut(BoardItem),
     /// Move a board item to a new position: `(id, x, y)`.
     BoardMove(String, i32, i32),
