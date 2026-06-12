@@ -934,7 +934,7 @@
       {micRecording}
       {cameraActive}
       on:create={handleCreate}
-      on:tile={tileWindows}
+      on:tile={({ detail }) => tileWindows(detail)}
       on:center={handleCenter}
       on:clear={handleClear}
       on:note={addNote}

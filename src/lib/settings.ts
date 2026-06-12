@@ -7,6 +7,7 @@ export type Settings = {
   theme: ThemeName;
   scrollback: number;
   background: string; // board background color (CSS color string)
+  tileCols: number; // remembered custom column count for the layout menu
 };
 
 export const DEFAULT_BACKGROUND = "#0e0e10";
@@ -36,11 +37,17 @@ export const settings: Readable<Settings> = derived(
         ? $storedSettings.background
         : DEFAULT_BACKGROUND;
 
+    let tileCols = $storedSettings.tileCols;
+    if (typeof tileCols !== "number" || tileCols < 1 || tileCols > 8) {
+      tileCols = 2;
+    }
+
     return {
       name,
       theme,
       scrollback,
       background,
+      tileCols,
     };
   },
 );

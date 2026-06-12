@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import StatusBar from "./StatusBar.svelte";
+  import LayoutMenu from "./LayoutMenu.svelte";
   import {
     ChevronLeftIcon,
     ChevronRightIcon,
@@ -30,7 +31,7 @@
 
   const dispatch = createEventDispatcher<{
     create: void;
-    tile: void;
+    tile: string | number;
     center: void;
     clear: void;
     note: void;
@@ -47,6 +48,7 @@
   }>();
 
   let collapsed = false;
+  let showTileMenu = false;
 </script>
 
 <div class="panel inline-block px-3 py-2">
@@ -90,14 +92,23 @@
       >
         <PlusCircleIcon strokeWidth={1.5} class="p-0.5" />
       </button>
-      <button
-        class="icon-button"
-        on:click={() => dispatch("tile")}
-        disabled={!connected || hasWriteAccess === false}
-        title="Tile terminals into a grid"
-      >
-        <GridIcon strokeWidth={1.5} class="p-0.5" />
-      </button>
+      <div class="relative">
+        <button
+          class="icon-button"
+          class:active={showTileMenu}
+          on:click={() => (showTileMenu = !showTileMenu)}
+          disabled={!connected || hasWriteAccess === false}
+          title="Arrange windows"
+        >
+          <GridIcon strokeWidth={1.5} class="p-0.5" />
+        </button>
+        {#if showTileMenu}
+          <LayoutMenu
+            on:select={(e) => dispatch("tile", e.detail)}
+            on:close={() => (showTileMenu = false)}
+          />
+        {/if}
+      </div>
       <button
         class="icon-button"
         on:click={() => dispatch("center")}
