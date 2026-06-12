@@ -103,6 +103,9 @@ pub enum WsServer {
     BoardMove(String, i32, i32),
     /// A board item was removed: `id`.
     BoardDelete(String),
+    /// WebRTC signaling: `(from_uid, to_uid, sdp/ice payload)`.
+    /// Broadcast to all; client filters by `to == self`. Ephemeral.
+    Signal(Uid, Uid, String),
     /// Alert the client of an application error.
     Error(String),
 }
@@ -146,4 +149,7 @@ pub enum WsClient {
     BoardMove(String, i32, i32),
     /// Remove a board item: `id`.
     BoardDelete(String),
+    /// WebRTC signaling: `(target_uid, sdp/ice payload)`. Server broadcasts
+    /// as `WsServer::Signal(from, to, payload)`; client filters `to == self`.
+    Signal(Uid, String),
 }

@@ -424,6 +424,14 @@ impl Session {
             .ok();
     }
 
+    /// Broadcast a WebRTC signaling message (ephemeral — not persisted).
+    /// All clients receive it; the intended recipient filters by `to == self`.
+    pub fn send_signal(&self, from: Uid, to: Uid, payload: String) {
+        self.broadcast
+            .send(WsServer::Signal(from, to, payload))
+            .ok();
+    }
+
     /// Send a measurement of the shell latency.
     pub fn send_latency_measurement(&self, latency: u64) {
         self.broadcast.send(WsServer::ShellLatency(latency)).ok();

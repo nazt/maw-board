@@ -274,6 +274,9 @@ async fn handle_socket(socket: &mut WebSocket, session: Arc<Session>) -> Result<
                 }
                 session.board_delete(&id);
             }
+            WsClient::Signal(target, payload) => {
+                session.send_signal(user_id, target, payload);
+            }
         }
     }
     Ok(())
