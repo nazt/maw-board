@@ -30,10 +30,67 @@
 
   // Drag state. While dragging, the dragged tile renders at `dragPos` and sends
   // BoardMove on a requestAnimationFrame cadence (contract v2: client throttle).
+  const LONG_PRESS_MS = 400;
+
   let dragId: string | null = null;
   let dragOffset = [0, 0];
   let dragPos = [0, 0];
   let rafPending = false;
+
+  // Long-press state for mobile: hold ~400ms before drag activates.
+  let pressTimer: ReturnType<typeof setTimeout> | null = null;
+  let pressItem: BoardItem | null = null;
+  let pressEvent: PointerEvent | null = null;
+  let longPressActive = false;
+
+  function onPointerDown(event: PointerEvent, item: BoardItem) {
+    if (hasWriteAccess === false) return;
+    // Desktop (mouse): start drag immediately.
+    if (event.pointerType === "mouse") {
+      startDrag(event, item);
+      return;
+    }
+    // Touch: wait for long-press before allowing drag.
+    pressItem = item;
+    pressEvent = event;
+    longPressActive = false;
+    pressTimer = setTimeout(() => {
+      if (pressItem && pressEvent) {
+        longPressActive = true;
+        startDrag(pressEvent, pressItem);
+      }
+    }, LONG_PRESS_MS);
+    window.addEventListener("pointermove", onPressMove);
+    window.addEventListener("pointerup", cancelPress);
+    window.addEventListener("pointercancel", cancelPress);
+  }
+
+  function onPressMove(event: PointerEvent) {
+    if (longPressActive) {
+      onMove(event);
+      return;
+    }
+    // If finger moves too far before long-press fires, cancel.
+    if (pressEvent) {
+      const dx = event.clientX - pressEvent.clientX;
+      const dy = event.clientY - pressEvent.clientY;
+      if (dx * dx + dy * dy > 100) cancelPress();
+    }
+  }
+
+  function cancelPress() {
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = null;
+    pressItem = null;
+    pressEvent = null;
+    if (longPressActive) {
+      endDrag();
+      longPressActive = false;
+    }
+    window.removeEventListener("pointermove", onPressMove);
+    window.removeEventListener("pointerup", cancelPress);
+    window.removeEventListener("pointercancel", cancelPress);
+  }
 
   function startDrag(event: PointerEvent, item: BoardItem) {
     if (hasWriteAccess === false) return;
@@ -66,6 +123,7 @@
       dispatch("move", { id: dragId, x: dragPos[0], y: dragPos[1] });
     }
     dragId = null;
+    longPressActive = false;
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", endDrag);
   }
@@ -86,7 +144,7 @@
       class="board-item"
       class:is-stream={item.kind === "stream"}
       style:width="{item.w}px"
-      on:pointerdown={(event) => startDrag(event, item)}
+      on:pointerdown={(event) => onPointerDown(event, item)}
     >
       <img
         src={streamSrcs[item.id] ?? item.dataUrl}
@@ -115,7 +173,11 @@
 <style lang="postcss">
   .board-item {
     @apply relative rounded-lg overflow-hidden bg-zinc-900 shadow-lg cursor-move select-none;
-    @apply ring-1 ring-zinc-700;
+    @apply ring-1 ring-zinc-700 transition-transform duration-150;
+  }
+
+  .board-item:active {
+    @apply scale-[1.02];
   }
 
   .board-item.is-stream {
