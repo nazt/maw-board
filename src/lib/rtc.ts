@@ -137,11 +137,7 @@ export class RtcMesh {
     this.localTracks.push(track);
     for (const [uid, pc] of this.peers) {
       pc.addTrack(track);
-      if (this.myUid > uid) {
-        this.createOffer(uid, pc);
-      } else {
-        this.sendSignal(uid, JSON.stringify({ type: "negotiate" }));
-      }
+      this.createOffer(uid, pc);
     }
   }
 
@@ -151,11 +147,7 @@ export class RtcMesh {
     for (const [uid, pc] of this.peers) {
       const sender = pc.getSenders().find((s) => s.track === track);
       if (sender) pc.removeTrack(sender);
-      if (this.myUid > uid) {
-        this.createOffer(uid, pc);
-      } else {
-        this.sendSignal(uid, JSON.stringify({ type: "negotiate" }));
-      }
+      this.createOffer(uid, pc);
     }
   }
 
