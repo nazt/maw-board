@@ -27,7 +27,7 @@
       bind:value
     />
     <button
-      class="flex-shrink-0 px-3 py-2 bg-pink-700 hover:bg-pink-600 active:ring-4 active:ring-pink-500/50 rounded font-medium"
+      class="flex-shrink-0 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:ring-4 active:ring-indigo-400/40 rounded-lg font-medium transition-colors"
       >Join</button
     >
   </form>

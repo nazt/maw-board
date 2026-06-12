@@ -818,33 +818,42 @@
   -->
   <div
     class="absolute inset-0 -z-10"
-    style:background-image="radial-gradient(#333 {zoom}px, transparent 0)"
+    style:background-image="radial-gradient(#282828 {zoom * 0.8}px, transparent 0)"
     style:background-size="{24 * zoom}px {24 * zoom}px"
     style:background-position="{-zoom * center[0]}px {-zoom * center[1]}px"
   />
 
-  <div class="py-2">
+  <div class="flex items-center gap-2 py-2 flex-wrap">
     {#if exitReason !== null}
-      <div class="text-red-400">{exitReason}</div>
-    {:else if connected}
-      <div class="flex items-center">
-        <div class="text-green-400">You are connected!</div>
-        {#if userId && hasWriteAccess === false}
-          <div
-            class="bg-yellow-900 text-yellow-200 px-1 py-0.5 rounded ml-3 inline-flex items-center gap-1"
-          >
-            <EyeIcon size="14" />
-            <span class="text-xs">Read-only</span>
-          </div>
-        {/if}
+      <div
+        class="px-2.5 py-1 rounded-full text-xs font-medium bg-red-900/60 text-red-300 border border-red-800/40"
+      >
+        {exitReason}
       </div>
+    {:else if connected}
+      <div
+        class="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-900/50 text-emerald-300 border border-emerald-800/40 flex items-center gap-1.5"
+      >
+        <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        Connected
+      </div>
+      {#if userId && hasWriteAccess === false}
+        <div
+          class="px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-900/50 text-yellow-300 border border-yellow-800/40 flex items-center gap-1"
+        >
+          <EyeIcon size="12" />
+          Read-only
+        </div>
+      {/if}
     {:else}
-      <div class="text-yellow-400">Connecting…</div>
+      <div
+        class="px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-900/50 text-yellow-300 border border-yellow-800/40"
+      >
+        Connecting…
+      </div>
     {/if}
 
-    <div class="mt-4">
-      <NameList {users} />
-    </div>
+    <NameList {users} />
   </div>
 
   <div class="absolute inset-0 overflow-hidden touch-none" bind:this={fabricEl}>

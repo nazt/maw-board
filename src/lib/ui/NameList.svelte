@@ -10,21 +10,18 @@
   );
 </script>
 
-<ul class="flex flex-col">
+<ul class="flex flex-wrap gap-1">
   {#each sortedUsers as [id, user] (id)}
     <li
-      class={`flex p-1 gap-3 items-center ${user.canWrite ? "" : "opacity-75"}`}
-      animate:flip={{ duration: 250 }}
+      class="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-800/80 border border-zinc-700/50"
+      class:opacity-60={!user.canWrite}
+      animate:flip={{ duration: 200 }}
     >
       <div
-        style:background="hsl({nameToHue(user.name)}, 75%, 60%)"
-        class="w-3.5 h-3.5 rounded-full"
+        style:background="hsl({nameToHue(user.name)}, 70%, 55%)"
+        class="w-2 h-2 rounded-full flex-shrink-0"
       />
-      <div
-        class="text-sm font-medium bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-300"
-      >
-        {user.name}
-      </div>
+      <span class="text-zinc-300 truncate max-w-[80px]">{user.name}</span>
     </li>
   {/each}
 </ul>
