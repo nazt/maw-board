@@ -18,6 +18,7 @@
     MessageSquareIcon,
     MicIcon,
     PlusCircleIcon,
+    RadioIcon,
     SettingsIcon,
     TerminalIcon,
     VideoIcon,
@@ -32,10 +33,12 @@
   export let cameraActive = false;
   export let boardLocked = false;
   export let lockedForMe = false;
+  export let broadcastMode = false;
 
   const dispatch = createEventDispatcher<{
     create: void;
     lock: void;
+    broadcast: void;
     tile: string | number;
     center: void;
     clear: void;
@@ -148,6 +151,17 @@
       </button>
       <button
         class="icon-button"
+        class:broadcast-on={broadcastMode}
+        on:click={() => dispatch("broadcast")}
+        disabled={!connected || hasWriteAccess === false}
+        title={broadcastMode
+          ? "Broadcast ON — typing goes to ALL terminals (click to stop)"
+          : "Broadcast input to all terminals at once"}
+      >
+        <RadioIcon strokeWidth={1.5} class="p-0.5" />
+      </button>
+      <button
+        class="icon-button"
         on:click={() => dispatch("files")}
         title="File explorer"
       >
@@ -255,6 +269,10 @@
 
   .icon-button.lock-on {
     @apply bg-amber-500 text-zinc-900 hover:bg-amber-400;
+  }
+
+  .icon-button.broadcast-on {
+    @apply bg-red-600 text-white hover:bg-red-500;
   }
 
   .activity {

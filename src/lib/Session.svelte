@@ -467,6 +467,20 @@
     srocket?.send({ data: [id, encrypted, offset] });
   }
 
+  // ── Broadcast input (Bo 2026-06-13) ───────────────────────────────────────
+  // When on, a keystroke in any terminal is mirrored to every terminal — handy
+  // for running the same command across many SSH sessions. Routes through the
+  // proven per-call handleInput (global counter stays correct), so no new crypto.
+  let broadcastMode = false;
+  function routeInput(originId: number, data: Uint8Array) {
+    if (hasWriteAccess === false || lockedForMe) return;
+    if (broadcastMode && shells.length > 1) {
+      for (const [sid] of shells) handleInput(sid, data);
+    } else {
+      handleInput(originId, data);
+    }
+  }
+
   // Stupid hack to preserve input focus when terminals are reordered.
   // See: https://github.com/sveltejs/svelte/issues/3973
   let activeElement: Element | null = null;
@@ -1058,8 +1072,10 @@
       {cameraActive}
       {boardLocked}
       {lockedForMe}
+      {broadcastMode}
       on:create={handleCreate}
       on:lock={toggleLock}
+      on:broadcast={() => (broadcastMode = !broadcastMode)}
       on:tile={({ detail }) => tileWindows(detail)}
       on:center={handleCenter}
       on:clear={handleClear}
@@ -1125,6 +1141,15 @@
       class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/95 text-zinc-900 text-sm font-semibold shadow-lg pointer-events-none"
     >
       🔒 Board locked by {boardLock?.ownerName ?? "someone"} — view only
+    </div>
+  {/if}
+
+  <!-- Broadcast banner: loud warning that keystrokes hit every terminal. -->
+  {#if broadcastMode}
+    <div
+      class="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2 rounded-full bg-red-600/95 text-white text-sm font-semibold shadow-lg pointer-events-none animate-pulse"
+    >
+      📡 Broadcast ON — typing goes to ALL terminals
     </div>
   {/if}
 
@@ -1254,8 +1279,7 @@
           cols={ws.cols}
           bind:write={writers[id]}
           bind:termEl={termElements[id]}
-          on:data={({ detail: data }) =>
-            hasWriteAccess && handleInput(id, data)}
+          on:data={({ detail: data }) => routeInput(id, data)}
           on:close={() => srocket?.send({ close: id })}
           on:shrink={() => {
             if (!hasWriteAccess) return;
