@@ -3,6 +3,7 @@
   import StatusBar from "./StatusBar.svelte";
   import {
     FileTextIcon,
+    FilmIcon,
     GridIcon,
     ImageIcon,
     MessageSquareIcon,
@@ -25,6 +26,7 @@
     create: void;
     tile: void;
     note: void;
+    video: void;
     chat: void;
     settings: void;
     networkInfo: void;
@@ -108,6 +110,14 @@
         title="Add sticky note"
       >
         <FileTextIcon strokeWidth={1.5} class="p-0.5" />
+      </button>
+      <button
+        class="icon-button"
+        on:click={() => dispatch("video")}
+        disabled={!connected || hasWriteAccess === false}
+        title="Add video to board"
+      >
+        <FilmIcon strokeWidth={1.5} class="p-0.5" />
       </button>
       <button
         class="icon-button"

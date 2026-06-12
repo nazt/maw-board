@@ -162,6 +162,15 @@
               text: event.currentTarget.value,
             })}
         />
+      {:else if item.kind === "video"}
+        <!-- svelte-ignore a11y-media-has-caption -->
+        <video
+          src={item.dataUrl}
+          style:width="{item.w}px"
+          controls
+          playsinline
+          on:pointerdown={(event) => event.stopPropagation()}
+        />
       {:else}
         <img
           src={streamSrcs[item.id] ?? item.dataUrl}
@@ -214,6 +223,10 @@
 
   .board-item img {
     @apply block w-full h-auto pointer-events-none;
+  }
+
+  .board-item video {
+    @apply block w-full h-auto bg-black;
   }
 
   .live-tag {

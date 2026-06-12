@@ -54,6 +54,7 @@ export class RtcMesh {
   private onTrack: OnTrackCallback;
   private config: RtcConfig;
   private localTracks: MediaStreamTrack[] = [];
+  private negotiateTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private disposed = false;
 
   constructor(
@@ -137,7 +138,7 @@ export class RtcMesh {
     this.localTracks.push(track);
     for (const [uid, pc] of this.peers) {
       pc.addTrack(track);
-      this.createOffer(uid, pc);
+      this.scheduleNegotiate(uid, pc);
     }
   }
 
@@ -147,13 +148,33 @@ export class RtcMesh {
     for (const [uid, pc] of this.peers) {
       const sender = pc.getSenders().find((s) => s.track === track);
       if (sender) pc.removeTrack(sender);
-      this.createOffer(uid, pc);
+      this.scheduleNegotiate(uid, pc);
     }
+  }
+
+  /**
+   * Debounced renegotiation. Adding video + audio back-to-back (e.g. camera +
+   * auto-mic) would otherwise fire two offers while the first is still in
+   * flight, producing SDP m-line ordering errors. Coalescing into one offer —
+   * and only offering from a stable signaling state — avoids the glare.
+   */
+  private scheduleNegotiate(uid: number, pc: RTCPeerConnection) {
+    const existing = this.negotiateTimers.get(uid);
+    if (existing) clearTimeout(existing);
+    this.negotiateTimers.set(
+      uid,
+      setTimeout(() => {
+        this.negotiateTimers.delete(uid);
+        this.createOffer(uid, pc);
+      }, 60),
+    );
   }
 
   /** Tear down all peer connections. */
   dispose() {
     this.disposed = true;
+    for (const timer of this.negotiateTimers.values()) clearTimeout(timer);
+    this.negotiateTimers.clear();
     for (const [, pc] of this.peers) {
       pc.close();
     }
@@ -191,11 +212,19 @@ export class RtcMesh {
   }
 
   private async createOffer(uid: number, pc: RTCPeerConnection) {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    this.sendSignal(
-      uid,
-      JSON.stringify({ type: "offer", sdp: offer.sdp }),
-    );
+    // Only offer from a stable state — otherwise an in-flight negotiation is
+    // still settling; retry once it completes (avoids SDP m-line errors).
+    if (pc.signalingState !== "stable") {
+      this.scheduleNegotiate(uid, pc);
+      return;
+    }
+    try {
+      const offer = await pc.createOffer();
+      if (pc.signalingState !== "stable") return; // raced while awaiting
+      await pc.setLocalDescription(offer);
+      this.sendSignal(uid, JSON.stringify({ type: "offer", sdp: offer.sdp }));
+    } catch {
+      // Transient negotiation error — a later track change will renegotiate.
+    }
   }
 }

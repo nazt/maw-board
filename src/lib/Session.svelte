@@ -609,6 +609,47 @@
     input.click();
   }
 
+  const MAX_VIDEO_BYTES = 8 * 1024 * 1024; // 8 MB — kept small so it syncs over WS
+
+  // Add a video clip to the board (shared via boardPut as a data URL).
+  function addVideoFile(file: File) {
+    if (hasWriteAccess === false) return;
+    if (!file.type.startsWith("video/")) return;
+    if (file.size > MAX_VIDEO_BYTES) {
+      makeToast({
+        kind: "error",
+        message: "Video too large (max 8 MB to share on the board).",
+      });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const [x, y] = nextBoardPos();
+      const item: BoardItem = {
+        id: crypto.randomUUID(),
+        kind: "video",
+        x,
+        y,
+        w: 320,
+        h: 240,
+        dataUrl: String(reader.result),
+      };
+      upsertBoardItem(item);
+      srocket?.send({ boardPut: item });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleVideoPick() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "video/*";
+    input.onchange = () => {
+      for (const file of input.files ?? []) addVideoFile(file);
+    };
+    input.click();
+  }
+
   onMount(() => {
     const onPaste = (event: ClipboardEvent) => {
       for (const item of event.clipboardData?.items ?? []) {
@@ -621,7 +662,10 @@
     const onDragOver = (event: DragEvent) => event.preventDefault();
     const onDrop = (event: DragEvent) => {
       event.preventDefault();
-      for (const file of event.dataTransfer?.files ?? []) addImage(file);
+      for (const file of event.dataTransfer?.files ?? []) {
+        if (file.type.startsWith("video/")) addVideoFile(file);
+        else addImage(file);
+      }
     };
     window.addEventListener("paste", onPaste);
     window.addEventListener("dragover", onDragOver);
@@ -813,6 +857,7 @@
       on:create={handleCreate}
       on:tile={tileWindows}
       on:note={addNote}
+      on:video={handleVideoPick}
       on:chat={() => {
         showChat = !showChat;
         newMessages = false;
