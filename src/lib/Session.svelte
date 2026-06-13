@@ -1145,13 +1145,19 @@
 
     // Keep each terminal's OWN size — if the user resized a window, honour it
     // instead of snapping back to the default ROWS×COLS. We only reposition.
-    // Box = the terminal's real world footprint derived from its rows/cols.
-    const boxes = shells.map(([id, ws]) => ({
-      id,
-      ws,
-      w: ws.cols * cellW + CHROME_W,
-      h: ws.rows * cellH + CHROME_H,
-    }));
+    // Box = the terminal's REAL rendered footprint (offsetWidth/Height, world px,
+    // zoom-independent) — the same basis the upstream arrange.ts uses, so the
+    // grid never overlaps and is identical on every device. The cols×cell
+    // estimate is only a fallback for a window that hasn't laid out yet.
+    const boxes = shells.map(([id, ws]) => {
+      const el = termWrappers[id];
+      return {
+        id,
+        ws,
+        w: el && el.offsetWidth > 0 ? el.offsetWidth : ws.cols * cellW + CHROME_W,
+        h: el && el.offsetHeight > 0 ? el.offsetHeight : ws.rows * cellH + CHROME_H,
+      };
+    });
 
     // Per-column width and per-row height = the largest terminal in that
     // column/row, so variable-size windows line up cleanly and never overlap.
@@ -1234,8 +1240,13 @@
     }
     const CHROME_W = 36;
     const CHROME_H = 60;
-    for (const [, ws] of shells) {
-      add(ws.x, ws.y, ws.cols * cellW + CHROME_W, ws.rows * cellH + CHROME_H);
+    for (const [id, ws] of shells) {
+      // Real rendered footprint when the window has laid out (exact, matches the
+      // grid + arrange.ts); cols×cell estimate only as an early-load fallback.
+      const el = termWrappers[id];
+      const w = el && el.offsetWidth > 0 ? el.offsetWidth : ws.cols * cellW + CHROME_W;
+      const h = el && el.offsetHeight > 0 ? el.offsetHeight : ws.rows * cellH + CHROME_H;
+      add(ws.x, ws.y, w, h);
     }
     for (const it of boardItems) {
       if (it.kind === "doc" || it.kind === "lock" || it.kind === "label") continue;
