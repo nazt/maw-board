@@ -30,6 +30,7 @@
   } from "./board";
   import { RtcMesh } from "./rtc";
   import { makeToast } from "./toast";
+  import { computeSnap, type SnapRect } from "./snap";
   import Board from "./ui/Board.svelte";
   import Chat, { type ChatMessage } from "./ui/Chat.svelte";
   import ChooseName from "./ui/ChooseName.svelte";
@@ -166,6 +167,11 @@
   let movingOrigin = [0, 0]; // Coordinates of mouse at origin when drag started.
   let movingSize: WsWinsize; // New [x, y] position of the dragged terminal.
   let movingIsDone = false; // Moving finished but hasn't been acknowledged.
+
+  // Soft alignment snapping — shared with board items via the <Board> guides.
+  const SNAP_PX = 8; // screen-space pull distance (÷ zoom → world units)
+  let termGuidesV: number[] = []; // active guide lines while dragging a terminal
+  let termGuidesH: number[] = [];
 
   let resizing = -1; // Terminal ID that is being resized.
   let resizingOrigin = [0, 0]; // Coordinates of top-left origin when resize started.
@@ -573,11 +579,26 @@
     function handleMouse(event: MouseEvent) {
       if (moving !== -1 && !movingIsDone) {
         const [x, y] = normalizePosition(event);
-        movingSize = {
-          ...movingSize,
-          x: Math.round(x - movingOrigin[0]),
-          y: Math.round(y - movingOrigin[1]),
-        };
+        let nx = Math.round(x - movingOrigin[0]);
+        let ny = Math.round(y - movingOrigin[1]);
+        // Soft-snap the window to align with other windows + board items.
+        const el = termWrappers[moving];
+        if (el && snapTargets.length) {
+          const others = snapTargets.filter((t) => t.id !== `t${moving}`);
+          const r = computeSnap(
+            nx,
+            ny,
+            el.offsetWidth / zoom,
+            el.offsetHeight / zoom,
+            others,
+            SNAP_PX / zoom,
+          );
+          nx = r.x;
+          ny = r.y;
+          termGuidesV = r.guidesV;
+          termGuidesH = r.guidesH;
+        }
+        movingSize = { ...movingSize, x: nx, y: ny };
         sendMove({ move: [moving, movingSize] });
       }
 
@@ -604,6 +625,8 @@
         movingIsDone = true;
         sendMove.cancel();
         srocket?.send({ move: [moving, movingSize] });
+        termGuidesV = [];
+        termGuidesH = [];
       }
 
       if (resizing !== -1) {
@@ -751,6 +774,38 @@
     } else {
       document.documentElement.style.removeProperty("--panel-bg");
     }
+  }
+
+  // World-space rects of everything draggable (terminals + board items) so a
+  // drag can soft-snap to align with its neighbours. Terminal pixel size comes
+  // from the live DOM (÷ zoom → world units); recomputed when shells/items move.
+  $: snapTargets = (() => {
+    const rects: SnapRect[] = [];
+    for (const [id, ws] of shells) {
+      const el = termWrappers[id];
+      if (!el) continue;
+      rects.push({
+        id: `t${id}`,
+        left: ws.x,
+        top: ws.y,
+        width: el.offsetWidth / zoom,
+        height: el.offsetHeight / zoom,
+      });
+    }
+    for (const it of boardItems) {
+      if (it.kind === "doc" || it.kind === "lock" || it.kind === "label") continue;
+      rects.push({ id: it.id, left: it.x, top: it.y, width: it.w, height: it.h });
+    }
+    return rects;
+  })();
+
+  // Paint the board background onto <html> + <body> too. <main> only spans ~58px
+  // (toolbar strip); html is transparent and body is the built-in #0e0e10, so the
+  // top safe-area band rendered white through the address bar. Mirroring the
+  // board color everywhere keeps the whole page one seamless colour. (Bo 2026-06-13)
+  $: if (typeof document !== "undefined") {
+    document.documentElement.style.backgroundColor = $settings.background;
+    document.body.style.backgroundColor = $settings.background;
   }
 
   function toggleLock() {
@@ -1356,6 +1411,9 @@
       offsetTopCss={OFFSET_TOP_CSS}
       offsetTransformOriginCss={OFFSET_TRANSFORM_ORIGIN_CSS}
       {normalizePosition}
+      {snapTargets}
+      extraGuidesV={termGuidesV}
+      extraGuidesH={termGuidesH}
       on:move={({ detail }) =>
         handleBoardMove(detail.id, detail.x, detail.y)}
       on:resize={({ detail }) =>

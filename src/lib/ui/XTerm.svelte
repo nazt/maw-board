@@ -61,12 +61,11 @@
     rename: string;
   }>();
 
-  // Quick terminal size presets (cols × rows).
+  // Quick shape presets — a tall portrait rectangle and a wide landscape one
+  // (Bo 2026-06-13: "สี่เหลี่ยมผืนผ้าแนวตั้งกับแนวนอน 2 ไซส์").
   const SIZE_PRESETS = [
-    { label: "S", cols: 80, rows: 24 },
-    { label: "M", cols: 100, rows: 30 },
-    { label: "L", cols: 120, rows: 40 },
-    { label: "XL", cols: 160, rows: 48 },
+    { label: "▯", title: "Portrait — tall (72×48)", cols: 72, rows: 48 },
+    { label: "▭", title: "Landscape — wide (150×28)", cols: 150, rows: 28 },
   ];
 
   const typeahead = new TypeAheadAddon();
@@ -315,7 +314,7 @@
         <button
           class="size-preset"
           class:active={cols === p.cols && rows === p.rows}
-          title={`Resize terminal to ${p.cols}×${p.rows}`}
+          title={p.title}
           on:pointerdown={(event) => {
             if (event.button !== 0) return;
             event.stopPropagation();

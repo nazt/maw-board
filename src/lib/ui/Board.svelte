@@ -4,6 +4,7 @@
   import { XIcon, DownloadIcon } from "svelte-feather-icons";
 
   import { slide } from "../action/slide";
+  import { computeSnap, type SnapRect } from "../snap";
   import type { BoardItem } from "../protocol";
 
   /** Board items (images + screen-share placeholder tiles). */
@@ -22,6 +23,18 @@
 
   /** Maps a pointer event to world-grid coordinates (same basis as terminals). */
   export let normalizePosition: (event: MouseEvent) => [number, number];
+  /** Other rects (terminals + items) to soft-snap against, in world units. */
+  export let snapTargets: SnapRect[] = [];
+  /** Guide lines from a terminal drag (Session), rendered on the same fabric. */
+  export let extraGuidesV: number[] = [];
+  export let extraGuidesH: number[] = [];
+
+  // Screen-space snap distance; converted to world units (÷ zoom) so the pull
+  // feels the same regardless of how far the board is zoomed.
+  const SNAP_PX = 8;
+  // Active guide lines (world coords) while dragging.
+  let guidesV: number[] = [];
+  let guidesH: number[] = [];
 
   const dispatch = createEventDispatcher<{
     move: { id: string; x: number; y: number };
@@ -169,7 +182,22 @@
   function onMove(event: PointerEvent) {
     if (dragId === null) return;
     const [wx, wy] = normalizePosition(event);
-    dragPos = [Math.round(wx - dragOffset[0]), Math.round(wy - dragOffset[1])];
+    let nx = Math.round(wx - dragOffset[0]);
+    let ny = Math.round(wy - dragOffset[1]);
+
+    // Soft-snap this item's edges/center to other items + terminals, and light
+    // up the guide lines we aligned to.
+    const item = items.find((it) => it.id === dragId);
+    if (item && snapTargets.length) {
+      const others = snapTargets.filter((t) => t.id !== dragId);
+      const r = computeSnap(nx, ny, item.w, item.h, others, SNAP_PX / zoom);
+      nx = r.x;
+      ny = r.y;
+      guidesV = r.guidesV;
+      guidesH = r.guidesH;
+    }
+    dragPos = [nx, ny];
+
     if (!rafPending) {
       rafPending = true;
       requestAnimationFrame(() => {
@@ -187,8 +215,34 @@
     }
     dragId = null;
     longPressActive = false;
+    guidesV = [];
+    guidesH = [];
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", endDrag);
+  }
+
+  // Real download. A bare `<a download href={dataUrl}>` silently fails on mobile
+  // (iOS Safari ignores `download` for data: URLs; Android blocks big ones), so
+  // re-fetch into a Blob, hand out an object URL with a proper filename + ext,
+  // and fall back to opening the raw URL (long-press-to-save) if that throws.
+  async function downloadItem(item: BoardItem) {
+    const ext = (mime: string) =>
+      ({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "video/mp4": "mp4", "video/webm": "webm" })[
+        mime
+      ] ?? (item.kind === "video" ? "mp4" : "png");
+    try {
+      const blob = await (await fetch(item.dataUrl)).blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${item.kind}-${item.id.slice(0, 6)}.${ext(blob.type)}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch {
+      window.open(item.dataUrl, "_blank");
+    }
   }
 </script>
 
@@ -245,28 +299,15 @@
         <div class="live-tag">● LIVE</div>
       {/if}
 
-      {#if item.kind === "video"}
-        <a
+      {#if item.kind === "video" || item.kind === "image"}
+        <button
           class="download"
-          href={item.dataUrl}
-          download="video"
-          title="Download video"
+          title="Download {item.kind}"
           on:pointerdown={(event) => event.stopPropagation()}
+          on:click={() => downloadItem(item)}
         >
           <DownloadIcon size="14" />
-        </a>
-      {/if}
-
-      {#if item.kind === "image"}
-        <a
-          class="download"
-          href={item.dataUrl}
-          download="image"
-          title="Download image"
-          on:pointerdown={(event) => event.stopPropagation()}
-        >
-          <DownloadIcon size="14" />
-        </a>
+        </button>
       {/if}
 
       {#if hasWriteAccess !== false}
@@ -300,10 +341,54 @@
   </div>
 {/each}
 
+<!-- Alignment guides: thin lines through the world coords we snapped to. They
+     ride the same canvas fabric (slide) as the items so they track pan/zoom. -->
+{#each [...guidesV, ...extraGuidesV] as gx}
+  <div
+    class="absolute pointer-events-none"
+    style:left={offsetLeftCss}
+    style:top={offsetTopCss}
+    style:transform-origin={offsetTransformOriginCss}
+    use:slide={{ x: gx, y: center[1], center, zoom, immediate: true }}
+  >
+    <div class="guide guide-v" />
+  </div>
+{/each}
+{#each [...guidesH, ...extraGuidesH] as gy}
+  <div
+    class="absolute pointer-events-none"
+    style:left={offsetLeftCss}
+    style:top={offsetTopCss}
+    style:transform-origin={offsetTransformOriginCss}
+    use:slide={{ x: center[0], y: gy, center, zoom, immediate: true }}
+  >
+    <div class="guide guide-h" />
+  </div>
+{/each}
+
 <style lang="postcss">
   .board-item {
     @apply relative rounded-lg overflow-hidden bg-zinc-900 shadow-lg cursor-move select-none;
     @apply ring-1 ring-zinc-700 transition-transform duration-150;
+  }
+
+  /* Snap guide lines — span well past the viewport so they read as full-length
+     rules; width/height in world px (the slide transform scales them by zoom). */
+  .guide {
+    @apply absolute pointer-events-none;
+    background: theme("colors.indigo.400");
+  }
+  .guide-v {
+    width: 1px;
+    height: 6000px;
+    top: -3000px;
+    left: 0;
+  }
+  .guide-h {
+    height: 1px;
+    width: 6000px;
+    left: -3000px;
+    top: 0;
   }
 
   .board-item:active {
@@ -338,7 +423,7 @@
   }
 
   .delete {
-    @apply absolute top-1 right-1 p-0.5 rounded bg-zinc-800/80 text-zinc-300;
+    @apply absolute top-1 right-1 z-30 p-0.5 rounded bg-zinc-800/80 text-zinc-300;
     @apply opacity-0 transition-opacity hover:bg-red-600 hover:text-white;
   }
 
@@ -347,7 +432,7 @@
   }
 
   .download {
-    @apply absolute bottom-1 left-1 p-0.5 rounded bg-zinc-800/80 text-zinc-300 z-10;
+    @apply absolute bottom-1 left-1 p-0.5 rounded bg-zinc-800/80 text-zinc-300 z-30;
     @apply opacity-0 transition-opacity hover:bg-indigo-600 hover:text-white;
   }
 
