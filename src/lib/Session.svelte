@@ -89,10 +89,11 @@
   // reveals when the pointer nears the top edge or hovers it.
   let toolbarVisible = true;
   let toolbarHideTimer: ReturnType<typeof setTimeout>;
+  const TOOLBAR_HIDE_MS = 12000; // Bo 2026-06-13: 3s felt too rushed
   function showToolbar() {
     toolbarVisible = true;
     clearTimeout(toolbarHideTimer);
-    toolbarHideTimer = setTimeout(() => (toolbarVisible = false), 3000);
+    toolbarHideTimer = setTimeout(() => (toolbarVisible = false), TOOLBAR_HIDE_MS);
   }
   onMount(() => {
     const onMove = (e: PointerEvent) => {
