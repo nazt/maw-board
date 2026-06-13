@@ -126,7 +126,13 @@ export type SnapAction =
   | "maximize"
   | "almostMaximize"
   | "maximizeHeight"
-  | "center";
+  | "center"
+  | "firstThird"
+  | "centerThird"
+  | "lastThird"
+  | "firstTwoThirds"
+  | "centerTwoThirds"
+  | "lastTwoThirds";
 
 export interface ViewRect {
   x: number;
@@ -142,6 +148,45 @@ export interface ViewportPx {
 
 export interface EdgeSnapOptions {
   coarse?: boolean;
+}
+
+export type SnapEdge = "left" | "right" | "top" | "bottom";
+
+export function isSnapAction(action: string): action is SnapAction {
+  switch (action) {
+    case "leftHalf":
+    case "rightHalf":
+    case "topHalf":
+    case "bottomHalf":
+    case "topLeft":
+    case "topRight":
+    case "bottomLeft":
+    case "bottomRight":
+    case "maximize":
+    case "almostMaximize":
+    case "maximizeHeight":
+    case "center":
+    case "firstThird":
+    case "centerThird":
+    case "lastThird":
+    case "firstTwoThirds":
+    case "centerTwoThirds":
+    case "lastTwoThirds":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function segmentStart(total: number, index: number, segments: number) {
+  return Math.floor((total * index) / segments);
+}
+
+function segmentSize(total: number, index: number, span: number, segments: number) {
+  return (
+    segmentStart(total, index + span, segments) -
+    segmentStart(total, index, segments)
+  );
 }
 
 /**
@@ -160,9 +205,13 @@ export function detectEdgeSnapAction(
   const coarse = options.coarse ?? false;
   const edge = coarse ? 32 : 14;
   const corner = coarse ? 84 : 48;
+  const strip = coarse
+    ? Math.min(180, Math.max(96, Math.floor(Math.min(viewport.w, viewport.h) * 0.22)))
+    : Math.min(132, Math.max(56, Math.floor(Math.min(viewport.w, viewport.h) * 0.18)));
 
   const x = Math.max(0, Math.min(viewport.w, clientX));
   const y = Math.max(0, Math.min(viewport.h, clientY));
+  const landscape = viewport.w >= viewport.h;
 
   if (x <= corner && y <= corner) return "topLeft";
   if (x >= viewport.w - corner && y <= corner) return "topRight";
@@ -171,10 +220,96 @@ export function detectEdgeSnapAction(
     return "bottomRight";
 
   if (y <= edge) return "maximize";
-  if (x <= edge) return "leftHalf";
-  if (x >= viewport.w - edge) return "rightHalf";
-  if (y >= viewport.h - edge) return "bottomHalf";
+  if (x <= edge) {
+    if (y <= strip) return "topHalf";
+    if (y >= viewport.h - strip) return "bottomHalf";
+    if (!landscape) {
+      if (y < viewport.h / 3) return "firstThird";
+      if (y > (viewport.h * 2) / 3) return "lastThird";
+      return "centerThird";
+    }
+    return "leftHalf";
+  }
+  if (x >= viewport.w - edge) {
+    if (y <= strip) return "topHalf";
+    if (y >= viewport.h - strip) return "bottomHalf";
+    if (!landscape) {
+      if (y < viewport.h / 3) return "firstThird";
+      if (y > (viewport.h * 2) / 3) return "lastThird";
+      return "centerThird";
+    }
+    return "rightHalf";
+  }
+  if (y >= viewport.h - edge) {
+    if (landscape) {
+      if (x < viewport.w / 3) return "firstThird";
+      if (x > (viewport.w * 2) / 3) return "lastThird";
+      return "centerThird";
+    }
+    return x < viewport.w / 2 ? "leftHalf" : "rightHalf";
+  }
   return null;
+}
+
+export function snapSharedEdges(action: SnapAction, view: ViewRect): SnapEdge[] {
+  const landscape = view.w >= view.h;
+  switch (action) {
+    case "leftHalf":
+      return ["right"];
+    case "rightHalf":
+      return ["left"];
+    case "topHalf":
+      return ["bottom"];
+    case "bottomHalf":
+      return ["top"];
+    case "topLeft":
+      return ["right", "bottom"];
+    case "topRight":
+      return ["left", "bottom"];
+    case "bottomLeft":
+      return ["right", "top"];
+    case "bottomRight":
+      return ["left", "top"];
+    case "firstThird":
+      return landscape ? ["right"] : ["bottom"];
+    case "centerThird":
+      return landscape ? ["left", "right"] : ["top", "bottom"];
+    case "lastThird":
+      return landscape ? ["left"] : ["top"];
+    case "firstTwoThirds":
+      return landscape ? ["right"] : ["bottom"];
+    case "centerTwoThirds":
+      return landscape ? ["left", "right"] : ["top", "bottom"];
+    case "lastTwoThirds":
+      return landscape ? ["left"] : ["top"];
+    case "almostMaximize":
+    case "center":
+    case "maximize":
+    case "maximizeHeight":
+      return [];
+  }
+}
+
+export function applySnapGap(
+  rect: ViewRect,
+  gap: number,
+  sharedEdges: SnapEdge[] = [],
+): ViewRect {
+  if (!Number.isFinite(gap) || gap <= 0) return rect;
+
+  const inset = Math.max(0, gap);
+  const shared = new Set(sharedEdges);
+  const left = shared.has("left") ? inset / 2 : inset;
+  const right = shared.has("right") ? inset / 2 : inset;
+  const top = shared.has("top") ? inset / 2 : inset;
+  const bottom = shared.has("bottom") ? inset / 2 : inset;
+
+  return {
+    x: rect.x + left,
+    y: rect.y + top,
+    w: Math.max(1, rect.w - left - right),
+    h: Math.max(1, rect.h - top - bottom),
+  };
 }
 
 /**
@@ -192,6 +327,10 @@ export function computeSnapTarget(
   const hh = Math.floor(view.h / 2);
   const rightX = view.x + view.w - hw; // right column starts at maxX - halfWidth
   const bottomY = view.y + view.h - hh;
+  const landscape = view.w >= view.h;
+  const twoThirds = landscape
+    ? segmentSize(view.w, 0, 2, 3)
+    : segmentSize(view.h, 0, 2, 3);
   switch (action) {
     case "leftHalf":
       return { x: view.x, y: view.y, w: hw, h: view.h };
@@ -236,5 +375,79 @@ export function computeSnapTarget(
         h,
       };
     }
+    case "firstThird":
+      return landscape
+        ? {
+            x: view.x + segmentStart(view.w, 0, 3),
+            y: view.y,
+            w: segmentSize(view.w, 0, 1, 3),
+            h: view.h,
+          }
+        : {
+            x: view.x,
+            y: view.y + segmentStart(view.h, 0, 3),
+            w: view.w,
+            h: segmentSize(view.h, 0, 1, 3),
+          };
+    case "centerThird":
+      return landscape
+        ? {
+            x: view.x + segmentStart(view.w, 1, 3),
+            y: view.y,
+            w: segmentSize(view.w, 1, 1, 3),
+            h: view.h,
+          }
+        : {
+            x: view.x,
+            y: view.y + segmentStart(view.h, 1, 3),
+            w: view.w,
+            h: segmentSize(view.h, 1, 1, 3),
+          };
+    case "lastThird":
+      return landscape
+        ? {
+            x: view.x + segmentStart(view.w, 2, 3),
+            y: view.y,
+            w: segmentSize(view.w, 2, 1, 3),
+            h: view.h,
+          }
+        : {
+            x: view.x,
+            y: view.y + segmentStart(view.h, 2, 3),
+            w: view.w,
+            h: segmentSize(view.h, 2, 1, 3),
+          };
+    case "firstTwoThirds":
+      return landscape
+        ? { x: view.x, y: view.y, w: twoThirds, h: view.h }
+        : { x: view.x, y: view.y, w: view.w, h: twoThirds };
+    case "centerTwoThirds":
+      return landscape
+        ? {
+            x: view.x + Math.floor((view.w - twoThirds) / 2),
+            y: view.y,
+            w: twoThirds,
+            h: view.h,
+          }
+        : {
+            x: view.x,
+            y: view.y + Math.floor((view.h - twoThirds) / 2),
+            w: view.w,
+            h: twoThirds,
+          };
+    case "lastTwoThirds":
+      return landscape
+        ? {
+            x: view.x + segmentStart(view.w, 1, 3),
+            y: view.y,
+            w: segmentSize(view.w, 1, 2, 3),
+            h: view.h,
+          }
+        : {
+            x: view.x,
+            y: view.y + segmentStart(view.h, 1, 3),
+            w: view.w,
+            h: segmentSize(view.h, 1, 2, 3),
+          };
   }
 }
