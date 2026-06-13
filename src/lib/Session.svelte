@@ -1122,11 +1122,16 @@
   // or a number = explicit column count.
   async function tileWindows(mode: string | number = "grid") {
     if (!canEdit) return;
-    const n = shells.length;
-    if (n === 0) return;
+    if (shells.length === 0) return;
     // Settle layout first so we never measure stale geometry (e.g. right after a
     // font-size change). Cheap two-frame delay; keeps the real-footprint basis.
     await settleLayout();
+    // Re-read shells AFTER the await — settleLayout yields, so a terminal may have
+    // opened/closed during those two frames. Deriving n (and every shells access
+    // below) from the post-settle snapshot keeps the grid math in bounds: a stale
+    // larger n would overrun rowH/colW → NaN coords; an emptied list would throw.
+    const n = shells.length;
+    if (n === 0) return;
 
     let nCols: number;
     if (typeof mode === "number") nCols = Math.max(1, Math.min(mode, n));
