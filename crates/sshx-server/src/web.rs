@@ -70,12 +70,17 @@ async fn go_redirect() -> Response {
                 let safe = url.replace('"', "%22");
                 let html = format!(
                     "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\
+<meta name=\"theme-color\" content=\"#0e0e10\">\
+<meta name=\"mobile-web-app-capable\" content=\"yes\">\
+<meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\
 <title>Oracle Terminal</title>\
-<style>html,body{{margin:0;height:100%;background:#000}}\
+<style>html,body{{margin:0;padding:0;width:100%;height:100vh;height:100dvh;\
+background:#000;overflow:hidden}}\
 iframe{{border:0;width:100%;height:100%;display:block}}</style></head>\
 <body><iframe src=\"{safe}\" \
-allow=\"microphone; camera; display-capture; clipboard-read; clipboard-write; fullscreen\" \
-allowfullscreen></iframe></body></html>"
+allow=\"microphone; camera; display-capture; clipboard-read; clipboard-write; fullscreen\">\
+</iframe></body></html>"
                 );
                 ([(http::header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
                     .into_response()
