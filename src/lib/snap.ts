@@ -108,3 +108,91 @@ export function computeSnap(
   }
   return { x: nx, y: ny, guidesV, guidesH };
 }
+
+// ── Rectangle-style snap layouts (Bo 2026-06-13) ────────────────────────────
+// Snap a window into a fraction of the *visible viewport* (the Rectangle app
+// model, mapped to the board's world coords by Session.svelte). Pure geometry:
+// given the viewport world-rect, return the target world-rect for an action.
+// Board y grows downward, so "top" = smaller y (no macOS flipped-frame naming).
+export type SnapAction =
+  | "leftHalf"
+  | "rightHalf"
+  | "topHalf"
+  | "bottomHalf"
+  | "topLeft"
+  | "topRight"
+  | "bottomLeft"
+  | "bottomRight"
+  | "maximize"
+  | "almostMaximize"
+  | "maximizeHeight"
+  | "center";
+
+export interface ViewRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * @param action  which snap layout to apply
+ * @param view    the visible viewport as a world rect
+ * @param current the window's current world rect — only maximizeHeight/center
+ *                read it (they preserve one axis / the current size)
+ */
+export function computeSnapTarget(
+  action: SnapAction,
+  view: ViewRect,
+  current?: ViewRect,
+): ViewRect {
+  const hw = Math.floor(view.w / 2);
+  const hh = Math.floor(view.h / 2);
+  const rightX = view.x + view.w - hw; // right column starts at maxX - halfWidth
+  const bottomY = view.y + view.h - hh;
+  switch (action) {
+    case "leftHalf":
+      return { x: view.x, y: view.y, w: hw, h: view.h };
+    case "rightHalf":
+      return { x: rightX, y: view.y, w: hw, h: view.h };
+    case "topHalf":
+      return { x: view.x, y: view.y, w: view.w, h: hh };
+    case "bottomHalf":
+      return { x: view.x, y: bottomY, w: view.w, h: hh };
+    case "topLeft":
+      return { x: view.x, y: view.y, w: hw, h: hh };
+    case "topRight":
+      return { x: rightX, y: view.y, w: hw, h: hh };
+    case "bottomLeft":
+      return { x: view.x, y: bottomY, w: hw, h: hh };
+    case "bottomRight":
+      return { x: rightX, y: bottomY, w: hw, h: hh };
+    case "maximize":
+      return { x: view.x, y: view.y, w: view.w, h: view.h };
+    case "almostMaximize": {
+      const w = Math.floor(view.w * 0.9);
+      const h = Math.floor(view.h * 0.9);
+      return {
+        x: view.x + Math.floor((view.w - w) / 2),
+        y: view.y + Math.floor((view.h - h) / 2),
+        w,
+        h,
+      };
+    }
+    case "maximizeHeight": {
+      const c = current ?? view; // keep current x/width, fill viewport height
+      return { x: c.x, y: view.y, w: c.w, h: view.h };
+    }
+    case "center": {
+      const c = current ?? view; // keep current size (clamped), recenter
+      const w = Math.min(c.w, view.w);
+      const h = Math.min(c.h, view.h);
+      return {
+        x: view.x + Math.floor((view.w - w) / 2),
+        y: view.y + Math.floor((view.h - h) / 2),
+        w,
+        h,
+      };
+    }
+  }
+}

@@ -28,7 +28,13 @@
   } from "./board";
   import { RtcMesh } from "./rtc";
   import { makeToast } from "./toast";
-  import { computeSnap, type SnapRect } from "./snap";
+  import {
+    computeSnap,
+    computeSnapTarget,
+    type SnapRect,
+    type SnapAction,
+    type ViewRect,
+  } from "./snap";
   import Board from "./ui/Board.svelte";
   import Chat, { type ChatMessage } from "./ui/Chat.svelte";
   import ChooseName from "./ui/ChooseName.svelte";
@@ -774,6 +780,50 @@
     srocket?.send({ boardPut: item });
   }
 
+  // ── Read-only file viewer (Bo 2026-06-13) ─────────────────────────────────
+  // Clicking a file in the explorer loads its content into a shared singleton
+  // board item, so peers see what's being viewed ("เพื่อนอยากเห็นว่าเขียนอะไร").
+  // Content comes from the sandboxed /api/file route (text-only, no secrets).
+  const FILE_VIEW_ID = "__file_view__";
+  $: fileViewText =
+    boardItems.find((it) => it.id === FILE_VIEW_ID)?.dataUrl ?? "";
+  let showFileView = false;
+  let lastFileView = "";
+  // Auto-open for everyone when the shared file changes, without fighting a
+  // manual close (only re-open when a *different* file is opened).
+  $: if (fileViewText && fileViewText !== lastFileView) {
+    lastFileView = fileViewText;
+    showFileView = true;
+  }
+
+  async function openFile(path: string) {
+    try {
+      const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+      if (!res.ok) {
+        makeToast({
+          kind: "error",
+          message: res.status === 403 ? "Restricted file" : "Can't open file",
+        });
+        return;
+      }
+      const { content } = await res.json();
+      const item: BoardItem = {
+        id: FILE_VIEW_ID,
+        kind: "doc",
+        x: 0,
+        y: 0,
+        w: 0,
+        h: 0,
+        dataUrl: `📄 ${path}\n\n${content}`,
+      };
+      upsertBoardItem(item);
+      srocket?.send({ boardPut: item });
+      showFileView = true;
+    } catch {
+      makeToast({ kind: "error", message: "Can't open file" });
+    }
+  }
+
   // ── Soft board lock (Bo 2026-06-13) ───────────────────────────────────────
   // A singleton board item (rides the existing board sync — no server change)
   // that flips everyone except the locker into read-only. "Soft": it gates the
@@ -1140,6 +1190,71 @@
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
   }
 
+  // The visible viewport as a world rect — the "screen" that Rectangle-style
+  // snap targets map onto. Inverts normalizePosition (world = center + page/zoom
+  // - offset): the top-left visible world point is (center - offset) and the
+  // visible span is (innerW, innerH) / zoom.
+  function visibleWorldRect(): ViewRect {
+    const [ox, oy] = getConstantOffset();
+    return {
+      x: center[0] - ox,
+      y: center[1] - oy,
+      w: window.innerWidth / zoom,
+      h: window.innerHeight / zoom,
+    };
+  }
+
+  // Snap one terminal into a region of the visible viewport (Rectangle-style),
+  // resizing its rows/cols to fill the target. Only the final shared `move` is
+  // sent; gated by canEdit like every other layout mutation.
+  async function applySnap(id: number, action: string) {
+    if (!canEdit) return;
+    const ws = shells.find(([sid]) => sid === id)?.[1];
+    if (!ws) return;
+    await settleLayout(); // don't measure stale geometry after a font-size change
+    const view = visibleWorldRect();
+    // Current footprint — real when laid out, cols×cell estimate as fallback.
+    const el = termWrappers[id];
+    const curW = el && el.offsetWidth > 0 ? el.offsetWidth : ws.cols * 9.6 + 36;
+    const curH = el && el.offsetHeight > 0 ? el.offsetHeight : ws.rows * 19 + 60;
+    const target = computeSnapTarget(action as SnapAction, view, {
+      x: ws.x,
+      y: ws.y,
+      w: curW,
+      h: curH,
+    });
+    // Measure this terminal's rendered cell size (post-zoom screen px -> world
+    // px), the same basis tileWindows()/fitToContent() use.
+    let cellW = 9.6;
+    let cellH = 19;
+    const screenEl = termElements[id]?.querySelector(
+      ".xterm-screen",
+    ) as HTMLElement | null;
+    if (screenEl && zoom && ws.cols && ws.rows) {
+      const r = screenEl.getBoundingClientRect();
+      if (r.width && r.height) {
+        cellW = r.width / ws.cols / zoom;
+        cellH = r.height / ws.rows / zoom;
+      }
+    }
+    const CHROME_W = 36;
+    const CHROME_H = 60;
+    const cols = Math.max(
+      TERM_MIN_COLS,
+      Math.floor((target.w - CHROME_W) / cellW),
+    );
+    const rows = Math.max(
+      TERM_MIN_ROWS,
+      Math.floor((target.h - CHROME_H) / cellH),
+    );
+    srocket?.send({
+      move: [
+        id,
+        { ...ws, x: Math.round(target.x), y: Math.round(target.y), cols, rows },
+      ],
+    });
+  }
+
   // Tile all open terminals into a uniform layout and recenter on it.
   // mode: "grid" (auto), "2col", "3col", "rows" (stacked), "cols" (side-by-side),
   // or a number = explicit column count.
@@ -1503,7 +1618,10 @@
   <YouTubePopup open={showYouTube} on:close={() => (showYouTube = false)} />
 
   {#if showExplorer}
-    <FileExplorer on:close={() => (showExplorer = false)} />
+    <FileExplorer
+      on:close={() => (showExplorer = false)}
+      on:open={({ detail }) => openFile(detail)}
+    />
   {/if}
 
   <SnippetBar
@@ -1518,6 +1636,14 @@
       readonly={!canEdit}
       on:edit={({ detail }) => handleDocEdit(detail)}
       on:close={() => (showDoc = false)}
+    />
+  {/if}
+
+  {#if showFileView}
+    <MarkdownDoc
+      text={fileViewText}
+      readonly={true}
+      on:close={() => (showFileView = false)}
     />
   {/if}
 
@@ -1649,6 +1775,7 @@
             const c = Math.max(cols, TERM_MIN_COLS);
             srocket?.send({ move: [id, { ...ws, rows: r, cols: c }] });
           }}
+          on:snap={({ detail }) => applySnap(id, detail)}
           on:bringToFront={() => {
             if (!canEdit) return;
             showNetworkInfo = false;

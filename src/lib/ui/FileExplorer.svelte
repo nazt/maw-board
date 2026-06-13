@@ -13,7 +13,7 @@
     ChevronDownIcon,
   } from "svelte-feather-icons";
 
-  const dispatch = createEventDispatcher<{ close: void }>();
+  const dispatch = createEventDispatcher<{ close: void; open: string }>();
 
   type Entry = { name: string; dir: boolean; size: number };
   type Row = { entry: Entry; path: string; depth: number };
@@ -97,8 +97,11 @@
         style:padding-left="{row.depth * 14 + 8}px"
         role="button"
         tabindex="0"
-        on:click={() => row.entry.dir && toggle(row.path)}
-        on:keydown={(e) => e.key === "Enter" && row.entry.dir && toggle(row.path)}
+        on:click={() =>
+          row.entry.dir ? toggle(row.path) : dispatch("open", row.path)}
+        on:keydown={(e) =>
+          e.key === "Enter" &&
+          (row.entry.dir ? toggle(row.path) : dispatch("open", row.path))}
       >
         {#if row.entry.dir}
           <span class="chev">

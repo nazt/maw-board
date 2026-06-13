@@ -96,11 +96,12 @@ fn backend() -> Router<Arc<ServerState>> {
         .route("/s/{name}", any(socket::get_session_ws))
         .route("/sysstat", get(sysstat))
         .route("/files", get(list_files))
+        .route("/file", get(read_file))
 }
 
 /// Read-only file browser root. Listing is confined to this directory; any
 /// attempt to escape it (via `..` or absolute components) is rejected.
-const FILES_ROOT: &str = "/root/maw-workspace";
+const FILES_ROOT: &str = "/root/board-workspace";
 
 /// Resolve a caller-supplied relative path against FILES_ROOT, rejecting any
 /// component that could escape the root. Returns None if the path is unsafe.
@@ -164,6 +165,102 @@ async fn list_files(Query(params): Query<HashMap<String, String>>) -> Response {
         body,
     )
         .into_response()
+}
+
+/// Read a text file under FILES_ROOT for the file explorer / viewer.
+async fn read_file(Query(params): Query<HashMap<String, String>>) -> Response {
+    let rel = params.get("path").map(String::as_str).unwrap_or("");
+    let Some(path) = safe_join(rel) else {
+        return (StatusCode::BAD_REQUEST, "invalid path").into_response();
+    };
+
+    // SECURITY: Reject dotfiles/dotfolders (components starting with '.')
+    for comp in Path::new(rel).components() {
+        if let Component::Normal(c) = comp {
+            if c.to_string_lossy().starts_with('.') {
+                return (StatusCode::BAD_REQUEST, "invalid path").into_response();
+            }
+        }
+    }
+
+    // SECURITY: even inside the shared workspace, never serve credential-bearing
+    // files (Bo directive: "watch only for passwords"). Name-based denylist —
+    // defense in depth on top of the dedicated, secret-free FILES_ROOT.
+    let lower = rel.to_ascii_lowercase();
+    const CREDENTIAL_MARKERS: [&str; 9] = [
+        "secret", "credential", "password", "passwd", "token", "id_rsa", ".key",
+        ".pem", ".env",
+    ];
+    if CREDENTIAL_MARKERS.iter().any(|m| lower.contains(m)) {
+        return (StatusCode::FORBIDDEN, "restricted file").into_response();
+    }
+
+    // Check metadata
+    let metadata = match tokio::fs::metadata(&path).await {
+        Ok(m) => m,
+        Err(_) => return (StatusCode::NOT_FOUND, "file not found").into_response(),
+    };
+
+    if metadata.is_dir() {
+        return (StatusCode::BAD_REQUEST, "not a file").into_response();
+    }
+
+    // Size limit: 1 MiB (1024 * 1024 bytes) -> 413 Payload Too Large
+    if metadata.len() > 1024 * 1024 {
+        return (StatusCode::PAYLOAD_TOO_LARGE, "file too large").into_response();
+    }
+
+    // Read as string (verifies UTF-8)
+    match tokio::fs::read_to_string(&path).await {
+        Ok(content) => {
+            let escaped_path = escape_json_string(rel);
+            let escaped_content = escape_json_string(&content);
+            let body = format!(
+                "{{\"path\":\"{}\",\"content\":\"{}\"}}",
+                escaped_path, escaped_content
+            );
+            (
+                [
+                    (http::header::CONTENT_TYPE, "application/json"),
+                    (http::header::CACHE_CONTROL, "no-cache"),
+                ],
+                body,
+            )
+                .into_response()
+        }
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::InvalidData {
+                (StatusCode::BAD_REQUEST, "binary file").into_response()
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("failed to read file: {e}"),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
+
+/// Helper to escape string characters for valid JSON injection.
+fn escape_json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\x08' => out.push_str("\\b"),
+            '\x0c' => out.push_str("\\f"),
+            _ if c.is_ascii_control() => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Sum of the non-idle and total CPU jiffies from the first line of /proc/stat.

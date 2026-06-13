@@ -283,3 +283,81 @@ async fn test_read_write_permissions() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_files_api() -> Result<()> {
+    let server = TestServer::new().await;
+    let client = reqwest::Client::new();
+
+    // 1. Test listing files
+    let url_list = format!("http://{}/api/files?path=", server.local_addr());
+    let resp = client.get(&url_list).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::OK);
+    let text = resp.text().await?;
+    assert!(text.contains("\"path\":"));
+    assert!(text.contains("\"items\":"));
+
+    // Create a temporary file inside /root/maw-workspace to test reading
+    let temp_file_path = std::path::Path::new("/root/maw-workspace/test_hello.txt");
+    tokio::fs::write(&temp_file_path, b"hello workspace file!").await?;
+
+    // 2. Test reading the file
+    let url_read = format!("http://{}/api/file?path=test_hello.txt", server.local_addr());
+    let resp = client.get(&url_read).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::OK);
+    assert_eq!(resp.headers().get(http::header::CONTENT_TYPE).unwrap(), "application/json");
+    assert_eq!(resp.headers().get(http::header::CACHE_CONTROL).unwrap(), "no-cache");
+    let json_text = resp.text().await?;
+    assert!(json_text.contains("\"path\":\"test_hello.txt\""));
+    assert!(json_text.contains("\"content\":\"hello workspace file!\""));
+
+    // Clean up
+    tokio::fs::remove_file(&temp_file_path).await.ok();
+
+    // 3. Test reading nonexistent file
+    let url_missing = format!("http://{}/api/file?path=does_not_exist.txt", server.local_addr());
+    let resp = client.get(&url_missing).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::NOT_FOUND);
+
+    // 4. Test directory traversal attempt
+    let url_traversal = format!("http://{}/api/file?path=../etc/passwd", server.local_addr());
+    let resp = client.get(&url_traversal).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+
+    // 5. Test dotfile rejection
+    let dotfile_path = std::path::Path::new("/root/maw-workspace/.test_dotfile");
+    tokio::fs::write(&dotfile_path, b"hidden content").await?;
+    let url_dotfile = format!("http://{}/api/file?path=.test_dotfile", server.local_addr());
+    let resp = client.get(&url_dotfile).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+    tokio::fs::remove_file(&dotfile_path).await.ok();
+
+    // 6. Test directory rejection
+    let temp_dir_path = std::path::Path::new("/root/maw-workspace/test_dir");
+    tokio::fs::create_dir(&temp_dir_path).await?;
+    let url_dir = format!("http://{}/api/file?path=test_dir", server.local_addr());
+    let resp = client.get(&url_dir).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+    tokio::fs::remove_dir(&temp_dir_path).await.ok();
+
+    // 7. Test binary file rejection (invalid UTF-8 bytes)
+    let binary_path = std::path::Path::new("/root/maw-workspace/test_binary.bin");
+    tokio::fs::write(&binary_path, b"hello \xff\xff world").await?;
+    let url_binary = format!("http://{}/api/file?path=test_binary.bin", server.local_addr());
+    let resp = client.get(&url_binary).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.text().await?, "binary file");
+    tokio::fs::remove_file(&binary_path).await.ok();
+
+    // 8. Test file size > 1 MiB -> 413 Payload Too Large
+    let large_path = std::path::Path::new("/root/maw-workspace/test_large.txt");
+    let large_data = vec![b'a'; 1024 * 1024 + 10];
+    tokio::fs::write(&large_path, &large_data).await?;
+    let url_large = format!("http://{}/api/file?path=test_large.txt", server.local_addr());
+    let resp = client.get(&url_large).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::PAYLOAD_TOO_LARGE);
+    tokio::fs::remove_file(&large_path).await.ok();
+
+    Ok(())
+}
+

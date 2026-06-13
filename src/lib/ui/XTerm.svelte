@@ -59,6 +59,7 @@
     focus: void;
     blur: void;
     rename: string;
+    snap: string;
   }>();
 
   // Quick shape presets — a tall portrait rectangle and a wide landscape one
@@ -67,6 +68,26 @@
     { label: "▯", title: "Portrait — tall (72×48)", cols: 72, rows: 48 },
     { label: "▭", title: "Landscape — wide (150×28)", cols: 150, rows: 28 },
   ];
+
+  // Rectangle-style snap layouts — tap to slot this terminal into a region of
+  // the visible board (Bo 2026-06-13). The parent (Session.svelte) maps the
+  // action onto the current viewport + resizes the terminal to fit. Grid mirrors
+  // the Rectangle menu: halves, quarters, then maximize / almost / height / center.
+  const SNAP_ACTIONS = [
+    { a: "leftHalf", g: "◧", t: "Left half" },
+    { a: "rightHalf", g: "◨", t: "Right half" },
+    { a: "topHalf", g: "⬒", t: "Top half" },
+    { a: "bottomHalf", g: "⬓", t: "Bottom half" },
+    { a: "topLeft", g: "◰", t: "Top-left quarter" },
+    { a: "topRight", g: "◳", t: "Top-right quarter" },
+    { a: "bottomLeft", g: "◱", t: "Bottom-left quarter" },
+    { a: "bottomRight", g: "◲", t: "Bottom-right quarter" },
+    { a: "maximize", g: "⬜", t: "Maximize" },
+    { a: "almostMaximize", g: "▣", t: "Almost maximize" },
+    { a: "maximizeHeight", g: "⇕", t: "Maximize height" },
+    { a: "center", g: "⊡", t: "Center" },
+  ];
+  let snapOpen = false;
 
   const typeahead = new TypeAheadAddon();
 
@@ -337,6 +358,42 @@
           {p.label}
         </button>
       {/each}
+      <!-- Rectangle-style snap menu — tap ⊞ to slot this terminal into a region. -->
+      <div class="relative">
+        <button
+          class="size-preset"
+          class:active={snapOpen}
+          title="Snap layout"
+          on:pointerdown={(event) => {
+            if (event.button !== 0) return;
+            event.stopPropagation();
+            snapOpen = !snapOpen;
+          }}
+        >
+          ⊞
+        </button>
+        {#if snapOpen}
+          <div
+            class="absolute top-full right-0 mt-1 z-50 grid grid-cols-4 gap-1 p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 shadow-xl"
+            on:pointerdown={(e) => e.stopPropagation()}
+          >
+            {#each SNAP_ACTIONS as s}
+              <button
+                class="w-7 h-7 flex items-center justify-center rounded text-zinc-300 hover:bg-indigo-600 hover:text-white text-sm leading-none"
+                title={s.t}
+                on:pointerdown={(event) => {
+                  if (event.button !== 0) return;
+                  event.stopPropagation();
+                  dispatch("snap", s.a);
+                  snapOpen = false;
+                }}
+              >
+                {s.g}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
   <div
