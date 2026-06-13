@@ -288,9 +288,9 @@ export class TouchZoom {
   destroy() {
     if (this.#node) {
       // @ts-ignore
-      document.addEventListener("gesturestart", this.#preventGesture);
+      document.removeEventListener("gesturestart", this.#preventGesture);
       // @ts-ignore
-      document.addEventListener("gesturechange", this.#preventGesture);
+      document.removeEventListener("gesturechange", this.#preventGesture);
 
       window.removeEventListener("resize", this.#updateBoundsD);
       this.#scrollingAnchor.removeEventListener("scroll", this.#updateBoundsD);

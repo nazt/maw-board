@@ -21,12 +21,10 @@
     WsWinsize,
   } from "./protocol";
   import {
-    createVoiceCapture,
     playVoice,
     readImageFile,
     startScreenShare,
     type StreamController,
-    type VoiceController,
   } from "./board";
   import { RtcMesh } from "./rtc";
   import { makeToast } from "./toast";
@@ -164,6 +162,7 @@
   $: hasWriteAccess = users.find(([uid]) => uid === userId)?.[1]?.canWrite;
 
   let moving = -1; // Terminal ID that is being dragged.
+  let movingPointerId: number | null = null; // Track pointer ID during drag gesture.
   let movingOrigin = [0, 0]; // Coordinates of mouse at origin when drag started.
   let movingSize: WsWinsize; // New [x, y] position of the dragged terminal.
   let movingIsDone = false; // Moving finished but hasn't been acknowledged.
@@ -174,6 +173,7 @@
   let termGuidesH: number[] = [];
 
   let resizing = -1; // Terminal ID that is being resized.
+  let resizingPointerId: number | null = null; // Track pointer ID during resize gesture.
   let resizingOrigin = [0, 0]; // Coordinates of top-left origin when resize started.
   let resizingCell = [0, 0]; // Pixel dimensions of a single terminal cell.
   let resizingSize: WsWinsize; // Last resize message sent.
@@ -190,7 +190,6 @@
   let boardItems: BoardItem[] = [];
   // Live screen-share frames as object URLs, keyed by board item id.
   let streamSrcs: Record<string, string> = {};
-  let voice: VoiceController | null = null;
   let micRecording = false;
   // WebRTC P2P mesh for voice/video (replaces WS voice relay for low latency).
   let rtcMesh: RtcMesh | null = null;
@@ -559,6 +558,16 @@
     srocket?.send({ boardPut: item });
   }
 
+  function handleStartMove(id: number, ws: WsWinsize, event: any) {
+    if (!canEdit) return;
+    const [x, y] = normalizePosition(event);
+    moving = id;
+    movingPointerId = event.pointerId ?? null;
+    movingOrigin = [x - ws.x, y - ws.y];
+    movingSize = ws;
+    movingIsDone = false;
+  }
+
   // Stupid hack to preserve input focus when terminals are reordered.
   // See: https://github.com/sveltejs/svelte/issues/3973
   let activeElement: Element | null = null;
@@ -585,6 +594,9 @@
 
     function handleMouse(event: MouseEvent) {
       if (moving !== -1 && !movingIsDone) {
+        if (event instanceof PointerEvent && movingPointerId !== null && event.pointerId !== movingPointerId) {
+          return;
+        }
         const [x, y] = normalizePosition(event);
         let nx = Math.round(x - movingOrigin[0]);
         let ny = Math.round(y - movingOrigin[1]);
@@ -610,6 +622,9 @@
       }
 
       if (resizing !== -1) {
+        if (event instanceof PointerEvent && resizingPointerId !== null && event.pointerId !== resizingPointerId) {
+          return;
+        }
         const cols = Math.max(
           Math.floor((event.pageX - resizingOrigin[0]) / resizingCell[0]),
           TERM_MIN_COLS, // Minimum number of columns.
@@ -629,15 +644,23 @@
 
     function handleMouseEnd(event: MouseEvent) {
       if (moving !== -1) {
+        if (event instanceof PointerEvent && movingPointerId !== null && event.pointerId !== movingPointerId) {
+          return;
+        }
         movingIsDone = true;
         sendMove.cancel();
         srocket?.send({ move: [moving, movingSize] });
         termGuidesV = [];
         termGuidesH = [];
+        movingPointerId = null;
       }
 
       if (resizing !== -1) {
+        if (event instanceof PointerEvent && resizingPointerId !== null && event.pointerId !== resizingPointerId) {
+          return;
+        }
         resizing = -1;
+        resizingPointerId = null;
       }
 
       if (event.type === "pointerleave") {
@@ -1344,6 +1367,7 @@
   onDestroy(() => {
     stream?.stop();
     rtcMesh?.dispose();
+    touchZoom?.destroy();
     micStream?.getTracks().forEach((t) => t.stop());
     cameraStream?.getTracks().forEach((t) => t.stop());
     for (const audio of Object.values(remoteAudios)) audio.pause();
@@ -1630,14 +1654,7 @@
             showNetworkInfo = false;
             srocket?.send({ move: [id, null] });
           }}
-          on:startMove={({ detail: event }) => {
-            if (!canEdit) return;
-            const [x, y] = normalizePosition(event);
-            moving = id;
-            movingOrigin = [x - ws.x, y - ws.y];
-            movingSize = ws;
-            movingIsDone = false;
-          }}
+          on:startMove={({ detail: event }) => handleStartMove(id, ws, event)}
           on:focus={() => {
             if (hasWriteAccess === false) return;
             focused = [...focused, id];
@@ -1667,6 +1684,7 @@
             const canvasEl = termElements[id].querySelector(".xterm-screen");
             if (canvasEl) {
               resizing = id;
+              resizingPointerId = event.pointerId ?? null;
               const r = canvasEl.getBoundingClientRect();
               resizingOrigin = [event.pageX - r.width, event.pageY - r.height];
               resizingCell = [r.width / ws.cols, r.height / ws.rows];

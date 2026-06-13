@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onDestroy } from "svelte";
   import { fade } from "svelte/transition";
   import { XIcon, DownloadIcon } from "svelte-feather-icons";
 
@@ -47,6 +47,7 @@
   const MIN_W = 120;
   const MIN_H = 80;
   let resizeId: string | null = null;
+  let resizePointerId: number | null = null;
   let resizeStartW = 0;
   let resizeStartH = 0;
   let resizeStartWorld = [0, 0];
@@ -58,6 +59,7 @@
     event.preventDefault();
     event.stopPropagation();
     resizeId = item.id;
+    resizePointerId = event.pointerId ?? null;
     resizeStartW = item.w || MIN_W;
     resizeStartH = item.h || MIN_H;
     resizeStartWorld = normalizePosition(event);
@@ -74,7 +76,7 @@
   }
 
   function onResize(event: PointerEvent) {
-    if (resizeId === null) return;
+    if (resizeId === null || event.pointerId !== resizePointerId) return;
     latestResizeEvent = event; // use the freshest sample inside the frame
     if (!resizePending) {
       resizePending = true;
@@ -89,11 +91,13 @@
   }
 
   function endResize(event: PointerEvent) {
+    if (event.pointerId !== resizePointerId) return;
     if (resizeId !== null) {
       const { w, h } = currentResize(event);
       dispatch("resize", { id: resizeId, w, h });
     }
     resizeId = null;
+    resizePointerId = null;
     latestResizeEvent = null;
     window.removeEventListener("pointermove", onResize);
     window.removeEventListener("pointerup", endResize);
@@ -105,6 +109,7 @@
   const LONG_PRESS_MS = 180;
 
   let dragId: string | null = null;
+  let dragPointerId: number | null = null;
   let dragOffset = [0, 0];
   let dragPos = [0, 0];
   let rafPending = false;
@@ -126,6 +131,12 @@
       return;
     }
     // Touch: wait for long-press before allowing drag.
+    if (pressTimer) {
+      clearTimeout(pressTimer);
+      window.removeEventListener("pointermove", onPressMove);
+      window.removeEventListener("pointerup", cancelPress);
+      window.removeEventListener("pointercancel", cancelPress);
+    }
     pressItem = item;
     pressEvent = event;
     longPressActive = false;
@@ -151,22 +162,34 @@
       // Calling onMove here too double-processed every pointermove.
       return;
     }
+    if (pressEvent && event.pointerId !== pressEvent.pointerId) return;
     // If finger moves too far before long-press fires, cancel.
     if (pressEvent) {
       const dx = event.clientX - pressEvent.clientX;
       const dy = event.clientY - pressEvent.clientY;
-      if (dx * dx + dy * dy > 100) cancelPress();
+      if (dx * dx + dy * dy > 100) cancelPress(event);
     }
   }
 
-  function cancelPress() {
+  function cancelPress(event?: PointerEvent) {
+    if (event && pressEvent && event.pointerId !== pressEvent.pointerId) return;
     if (pressTimer) clearTimeout(pressTimer);
     pressTimer = null;
     pressItem = null;
     pressEvent = null;
     if (longPressActive) {
-      endDrag();
-      longPressActive = false;
+      if (event) {
+        endDrag(event);
+      } else {
+        dragId = null;
+        dragPointerId = null;
+        longPressActive = false;
+        guidesV = [];
+        guidesH = [];
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", endDrag);
+        window.removeEventListener("pointercancel", endDrag);
+      }
     }
     window.removeEventListener("pointermove", onPressMove);
     window.removeEventListener("pointerup", cancelPress);
@@ -178,6 +201,7 @@
     event.preventDefault();
     const [wx, wy] = normalizePosition(event);
     dragId = item.id;
+    dragPointerId = event.pointerId ?? null;
     dragOffset = [wx - item.x, wy - item.y];
     dragPos = [item.x, item.y];
     window.addEventListener("pointermove", onMove);
@@ -186,7 +210,7 @@
   }
 
   function onMove(event: PointerEvent) {
-    if (dragId === null) return;
+    if (dragId === null || event.pointerId !== dragPointerId) return;
     const [wx, wy] = normalizePosition(event);
     let nx = Math.round(wx - dragOffset[0]);
     let ny = Math.round(wy - dragOffset[1]);
@@ -215,11 +239,13 @@
     }
   }
 
-  function endDrag() {
+  function endDrag(event: PointerEvent) {
+    if (event.pointerId !== dragPointerId) return;
     if (dragId !== null) {
       dispatch("move", { id: dragId, x: dragPos[0], y: dragPos[1] });
     }
     dragId = null;
+    dragPointerId = null;
     longPressActive = false;
     guidesV = [];
     guidesH = [];
@@ -254,6 +280,19 @@
       window.open(item.dataUrl, "_blank");
     }
   }
+
+  onDestroy(() => {
+    if (pressTimer) clearTimeout(pressTimer);
+    window.removeEventListener("pointermove", onPressMove);
+    window.removeEventListener("pointerup", cancelPress);
+    window.removeEventListener("pointercancel", cancelPress);
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", endDrag);
+    window.removeEventListener("pointercancel", endDrag);
+    window.removeEventListener("pointermove", onResize);
+    window.removeEventListener("pointerup", endResize);
+    window.removeEventListener("pointercancel", endResize);
+  });
 </script>
 
 {#each items.filter((it) => it.kind !== "doc" && it.kind !== "lock" && it.kind !== "label") as item (item.id)}
