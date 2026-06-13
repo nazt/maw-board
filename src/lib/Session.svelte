@@ -1071,7 +1071,9 @@
   function handleClear() {
     if (!canEdit) return;
     for (const item of boardItems) {
-      if (item.kind === "doc" || item.kind === "lock") continue;
+      // Keep singletons that aren't board "content": doc, lock state, labels.
+      if (item.kind === "doc" || item.kind === "lock" || item.kind === "label")
+        continue;
       srocket?.send({ boardDelete: item.id });
       removeBoardItem(item.id);
     }
