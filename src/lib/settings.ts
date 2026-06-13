@@ -10,6 +10,7 @@ export type Settings = {
   background: string; // board background color (CSS color string)
   panelBackground: string; // panel/header background color (CSS color string)
   tileCols: number; // remembered custom column count for the layout menu
+  snapGap: number; // Rectangle snap gap in world px; 0 means off
   snippets: string[]; // saved command snippets, click-to-paste into a terminal
 };
 
@@ -56,6 +57,11 @@ export const settings: Readable<Settings> = derived(
       tileCols = 2;
     }
 
+    let snapGap = $storedSettings.snapGap;
+    if (typeof snapGap !== "number" || snapGap < 0 || snapGap > 64) {
+      snapGap = 0;
+    }
+
     const snippets = Array.isArray($storedSettings.snippets)
       ? $storedSettings.snippets.filter((s) => typeof s === "string")
       : DEFAULT_SNIPPETS;
@@ -68,6 +74,7 @@ export const settings: Readable<Settings> = derived(
       background,
       panelBackground,
       tileCols,
+      snapGap,
       snippets,
     };
   },

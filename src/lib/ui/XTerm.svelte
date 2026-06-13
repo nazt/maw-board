@@ -97,6 +97,7 @@
       { a: "almostMaximize", g: "▣", t: "Almost maximize" },
       { a: "maximizeHeight", g: "⇕", t: "Maximize height" },
       { a: "center", g: "⊡", t: "Center" },
+      { a: "restore", g: "↩", t: "Restore previous layout" },
       { a: "layoutMode", g: "⌨", t: "Keyboard layout mode" },
     ],
   ];

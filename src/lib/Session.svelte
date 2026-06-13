@@ -32,7 +32,9 @@
     computeSnap,
     computeSnapTarget,
     detectEdgeSnapAction,
+    applySnapGap,
     isSnapAction,
+    snapSharedEdges,
     type SnapRect,
     type SnapAction,
     type ViewRect,
@@ -197,6 +199,7 @@
   let termGuidesH: number[] = [];
   let edgeSnapPreview: ViewRect | null = null;
   let pendingEdgeSnap: { id: number; action: SnapAction } | null = null;
+  let snapRestore: Record<number, WsWinsize> = {};
   let snapHistory: Record<number, { action: SnapAction; rect: ViewRect }> = {};
   let layoutModeId: number | null = null;
   let layoutModeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -675,7 +678,7 @@
         );
         if (edgeAction) {
           const view = visibleWorldRect();
-          edgeSnapPreview = computeSnapTarget(edgeAction, view, {
+          const preview = computeSnapTarget(edgeAction, view, {
             x: nx,
             y: ny,
             w:
@@ -687,6 +690,11 @@
                 ? el.offsetHeight
                 : movingSize.rows * 19 + 60,
           });
+          edgeSnapPreview = applySnapGap(
+            preview,
+            $settings.snapGap,
+            snapSharedEdges(edgeAction, view),
+          );
           pendingEdgeSnap = { id: moving, action: edgeAction };
           termGuidesV = [];
           termGuidesH = [];
@@ -804,7 +812,8 @@
         return;
       }
       layoutModeId = id;
-      void applySnap(id, action);
+      if (action === "restore") restoreSnap(id);
+      else void applySnap(id, action);
     }
 
     window.addEventListener("keydown", handleLayoutKey, true);
@@ -1394,6 +1403,20 @@
     return requested;
   }
 
+  function recordSnap(
+    id: number,
+    ws: WsWinsize,
+    action: SnapAction,
+    previousRect: ViewRect,
+    targetRect: ViewRect,
+  ) {
+    const history = snapHistory[id];
+    if (!history || !rectsClose(history.rect, previousRect)) {
+      snapRestore = { ...snapRestore, [id]: { ...ws } };
+    }
+    snapHistory = { ...snapHistory, [id]: { action, rect: targetRect } };
+  }
+
   function clearLayoutMode() {
     layoutModeId = null;
     if (layoutModeTimer) {
@@ -1424,7 +1447,7 @@
     });
   }
 
-  function layoutKeyAction(event: KeyboardEvent): SnapAction | null {
+  function layoutKeyAction(event: KeyboardEvent): SnapAction | "restore" | null {
     if (event.altKey || event.ctrlKey || event.metaKey) return null;
     switch (event.key) {
       case "ArrowLeft":
@@ -1459,6 +1482,9 @@
         return "centerThird";
       case "3":
         return "lastThird";
+      case "r":
+      case "R":
+        return "restore";
       default:
         return null;
     }
@@ -1483,7 +1509,18 @@
     const currentRect = terminalFootprint(id, ws);
     const resolvedAction =
       options.cycle === false ? action : cycleSnapAction(id, action, currentRect);
-    const target = computeSnapTarget(resolvedAction, view, currentRect);
+    const rawTarget = computeSnapTarget(resolvedAction, view, currentRect);
+    const gap =
+      resolvedAction === "center" ||
+      resolvedAction === "almostMaximize" ||
+      resolvedAction === "maximizeHeight"
+        ? 0
+        : $settings.snapGap;
+    const target = applySnapGap(
+      rawTarget,
+      gap,
+      snapSharedEdges(resolvedAction, view),
+    );
     // Measure this terminal's rendered cell size (post-zoom screen px -> world
     // px), the same basis tileWindows()/fitToContent() use.
     let cellW = 9.6;
@@ -1525,11 +1562,27 @@
         { ...ws, x: Math.round(target.x), y: Math.round(target.y), cols, rows },
       ],
     });
-    snapHistory = { ...snapHistory, [id]: { action: resolvedAction, rect: target } };
+    recordSnap(id, ws, resolvedAction, currentRect, target);
+  }
+
+  function restoreSnap(id: number) {
+    if (!canEdit) return;
+    const previous = snapRestore[id];
+    if (!previous) {
+      makeToast({ kind: "info", message: "No saved layout to restore." });
+      return;
+    }
+    srocket?.send({ move: [id, previous] });
+    const { [id]: _restore, ...restRestore } = snapRestore;
+    const { [id]: _history, ...restHistory } = snapHistory;
+    snapRestore = restRestore;
+    snapHistory = restHistory;
   }
 
   function handleSnapButton(id: number, action: string) {
-    if (action === "layoutMode") {
+    if (action === "restore") {
+      restoreSnap(id);
+    } else if (action === "layoutMode") {
       enterLayoutMode(id);
     } else if (isSnapAction(action)) {
       void applySnap(id, action);

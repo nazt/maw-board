@@ -13,6 +13,7 @@
   let inputFontSize: number;
   let inputBackground: string;
   let inputPanelBackground: string;
+  let inputSnapGap: number;
 
   // Quick board background presets.
   const BG_PRESETS = [
@@ -44,6 +45,7 @@
     inputFontSize = $settings.fontSize;
     inputBackground = $settings.background;
     inputPanelBackground = $settings.panelBackground;
+    inputSnapGap = $settings.snapGap;
   }
 </script>
 
@@ -156,6 +158,26 @@
         >
           Default
         </button>
+      </div>
+    </div>
+    <div class="item">
+      <div>
+        <p class="item-title">Snap gaps</p>
+        <p class="item-subtitle">
+          Spacing between Rectangle snap regions ({inputSnapGap}px).
+        </p>
+      </div>
+      <div class="flex items-center gap-3 w-52">
+        <input
+          type="range"
+          min="0"
+          max="64"
+          step="2"
+          class="flex-1 accent-indigo-500"
+          bind:value={inputSnapGap}
+          on:input={() => updateSettings({ snapGap: Number(inputSnapGap) })}
+        />
+        <span class="text-sm text-zinc-300 w-8 text-right">{inputSnapGap}</span>
       </div>
     </div>
     <div class="item">
