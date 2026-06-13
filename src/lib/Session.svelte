@@ -489,7 +489,15 @@
       makeToast({ kind: "info", message: "Read-only mode — can't paste." });
       return;
     }
-    const target = focused[0];
+    // Clicking the snippet panel blurs the terminal, so fall back to the
+    // last-focused shell (if it still exists) instead of the live focus.
+    const live = focused[0];
+    const target =
+      live !== undefined
+        ? live
+        : shells.some(([sid]) => sid === lastFocused)
+          ? lastFocused
+          : undefined;
     if (target === undefined) {
       makeToast({
         kind: "info",
@@ -618,6 +626,7 @@
   });
 
   let focused: number[] = [];
+  let lastFocused = -1; // most-recent focused shell; survives blur for snippet paste
   $: setFocus(focused);
 
   // Wait a small amount of time, since blur events happen before focus events.
@@ -765,6 +774,7 @@
 
   // Persist a note's edited text to peers.
   function handleNoteEdit(id: string, text: string) {
+    if (!canEdit) return;
     const item = boardItems.find((it) => it.id === id);
     if (!item) return;
     const updated = { ...item, dataUrl: text };
@@ -791,7 +801,7 @@
   // object URL; the file is shared with peers (as a data URL) only when small
   // enough to fit over the WS. A download button on the tile lets anyone save it.
   function addVideoFile(file: File) {
-    if (hasWriteAccess === false) return;
+    if (!canEdit) return;
     if (!file.type.startsWith("video/")) return;
 
     const [x, y] = nextBoardPos();
@@ -866,7 +876,7 @@
   let displayStream: MediaStream | null = null;
 
   async function handleStream() {
-    if (hasWriteAccess === false) return;
+    if (!canEdit) return;
     if (stream) {
       stopStream();
       return;
@@ -973,7 +983,7 @@
   // mode: "grid" (auto), "2col", "3col", "rows" (stacked), "cols" (side-by-side),
   // or a number = explicit column count.
   function tileWindows(mode: string | number = "grid") {
-    if (!hasWriteAccess) return;
+    if (!canEdit) return;
     const n = shells.length;
     if (n === 0) return;
 
@@ -1233,7 +1243,7 @@
   {#if showDoc}
     <MarkdownDoc
       text={docText}
-      readonly={hasWriteAccess === false}
+      readonly={!canEdit}
       on:edit={({ detail }) => handleDocEdit(detail)}
       on:close={() => (showDoc = false)}
     />
@@ -1341,9 +1351,9 @@
           canRename={canEdit}
           on:rename={({ detail }) => handleRename(id, detail)}
           on:data={({ detail: data }) => routeInput(id, data)}
-          on:close={() => srocket?.send({ close: id })}
+          on:close={() => canEdit && srocket?.send({ close: id })}
           on:shrink={() => {
-            if (!hasWriteAccess) return;
+            if (!canEdit) return;
             const rows = Math.max(ws.rows - 4, TERM_MIN_ROWS);
             const cols = Math.max(ws.cols - 10, TERM_MIN_COLS);
             if (rows !== ws.rows || cols !== ws.cols) {
@@ -1351,24 +1361,24 @@
             }
           }}
           on:expand={() => {
-            if (!hasWriteAccess) return;
+            if (!canEdit) return;
             const rows = ws.rows + 4;
             const cols = ws.cols + 10;
             srocket?.send({ move: [id, { ...ws, rows, cols }] });
           }}
           on:preset={({ detail: { cols, rows } }) => {
-            if (!hasWriteAccess) return;
+            if (!canEdit) return;
             const r = Math.max(rows, TERM_MIN_ROWS);
             const c = Math.max(cols, TERM_MIN_COLS);
             srocket?.send({ move: [id, { ...ws, rows: r, cols: c }] });
           }}
           on:bringToFront={() => {
-            if (!hasWriteAccess) return;
+            if (!canEdit) return;
             showNetworkInfo = false;
             srocket?.send({ move: [id, null] });
           }}
           on:startMove={({ detail: event }) => {
-            if (!hasWriteAccess) return;
+            if (!canEdit) return;
             const [x, y] = normalizePosition(event);
             moving = id;
             movingOrigin = [x - ws.x, y - ws.y];
@@ -1376,8 +1386,9 @@
             movingIsDone = false;
           }}
           on:focus={() => {
-            if (!hasWriteAccess) return;
+            if (hasWriteAccess === false) return;
             focused = [...focused, id];
+            lastFocused = id; // remember for snippet paste after panel clicks
           }}
           on:blur={() => {
             focused = focused.filter((i) => i !== id);
