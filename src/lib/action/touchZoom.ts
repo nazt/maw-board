@@ -219,7 +219,10 @@ export class TouchZoom {
           [y, 0]
         : // scroll = pan vertically (or in any direction on a trackpad)
           [x, y],
-      0.5,
+      // 1:1 with finger/mouse drag (#handleDrag) so desktop trackpad/wheel pan
+      // covers the same world distance as mobile drag — the old 0.5 made desktop
+      // pan half as far, so the two felt out of sync. (Bo 2026-06-13)
+      1.0,
     );
 
     if (Vec.isEqual(delta, [0, 0])) return;
@@ -255,7 +258,7 @@ export class TouchZoom {
     const zoomLevel = movement[0] / this.#lastMovement;
     this.#lastMovement = movement[0];
 
-    this.center = Vec.add(this.center, Vec.div(trueDelta, this.zoom * 2));
+    this.center = Vec.add(this.center, Vec.div(trueDelta, this.zoom));
     this.zoom = Vec.clamp(this.zoom * zoomLevel, MIN_ZOOM, MAX_ZOOM);
     this.#moved();
   };
@@ -275,6 +278,7 @@ export class TouchZoom {
     "drag",
     MouseEvent | PointerEvent | TouchEvent | KeyboardEvent
   > = ({ delta, elapsedTime }) => {
+    if (this.isPinching) return;
     if (delta[0] === 0 && delta[1] === 0 && elapsedTime < 200) return;
     this.center = Vec.sub(this.center, Vec.div(delta, this.zoom));
     this.#moved();
