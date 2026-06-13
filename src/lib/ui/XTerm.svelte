@@ -72,20 +72,33 @@
   // Rectangle-style snap layouts — tap to slot this terminal into a region of
   // the visible board (Bo 2026-06-13). The parent (Session.svelte) maps the
   // action onto the current viewport + resizes the terminal to fit. Grid mirrors
-  // the Rectangle menu: halves, quarters, then maximize / almost / height / center.
-  const SNAP_ACTIONS = [
-    { a: "leftHalf", g: "◧", t: "Left half" },
-    { a: "rightHalf", g: "◨", t: "Right half" },
-    { a: "topHalf", g: "⬒", t: "Top half" },
-    { a: "bottomHalf", g: "⬓", t: "Bottom half" },
-    { a: "topLeft", g: "◰", t: "Top-left quarter" },
-    { a: "topRight", g: "◳", t: "Top-right quarter" },
-    { a: "bottomLeft", g: "◱", t: "Bottom-left quarter" },
-    { a: "bottomRight", g: "◲", t: "Bottom-right quarter" },
-    { a: "maximize", g: "⬜", t: "Maximize" },
-    { a: "almostMaximize", g: "▣", t: "Almost maximize" },
-    { a: "maximizeHeight", g: "⇕", t: "Maximize height" },
-    { a: "center", g: "⊡", t: "Center" },
+  // the Rectangle menu: halves, quarters, thirds, and keyboard layout mode.
+  const SNAP_GROUPS = [
+    [
+      { a: "leftHalf", g: "◧", t: "Left half" },
+      { a: "rightHalf", g: "◨", t: "Right half" },
+      { a: "topHalf", g: "⬒", t: "Top half" },
+      { a: "bottomHalf", g: "⬓", t: "Bottom half" },
+      { a: "topLeft", g: "◰", t: "Top-left quarter" },
+      { a: "topRight", g: "◳", t: "Top-right quarter" },
+      { a: "bottomLeft", g: "◱", t: "Bottom-left quarter" },
+      { a: "bottomRight", g: "◲", t: "Bottom-right quarter" },
+    ],
+    [
+      { a: "firstThird", g: "⅓", t: "First third (repeat cycles)" },
+      { a: "centerThird", g: "⅓", t: "Center third" },
+      { a: "lastThird", g: "⅓", t: "Last third (repeat cycles)" },
+      { a: "firstTwoThirds", g: "⅔", t: "First two-thirds" },
+      { a: "centerTwoThirds", g: "⅔", t: "Center two-thirds" },
+      { a: "lastTwoThirds", g: "⅔", t: "Last two-thirds" },
+    ],
+    [
+      { a: "maximize", g: "⬜", t: "Maximize" },
+      { a: "almostMaximize", g: "▣", t: "Almost maximize" },
+      { a: "maximizeHeight", g: "⇕", t: "Maximize height" },
+      { a: "center", g: "⊡", t: "Center" },
+      { a: "layoutMode", g: "⌨", t: "Keyboard layout mode" },
+    ],
   ];
   let snapOpen = false;
 
@@ -374,22 +387,26 @@
         </button>
         {#if snapOpen}
           <div
-            class="absolute top-full right-0 mt-1 z-50 grid grid-cols-4 gap-1 p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 shadow-xl"
+            class="absolute top-full right-0 mt-1 z-50 flex flex-col gap-1 p-1.5 rounded-lg bg-zinc-800 border border-zinc-700 shadow-xl"
             on:pointerdown={(e) => e.stopPropagation()}
           >
-            {#each SNAP_ACTIONS as s}
-              <button
-                class="w-7 h-7 flex items-center justify-center rounded text-zinc-300 hover:bg-indigo-600 hover:text-white text-sm leading-none"
-                title={s.t}
-                on:pointerdown={(event) => {
-                  if (event.button !== 0) return;
-                  event.stopPropagation();
-                  dispatch("snap", s.a);
-                  snapOpen = false;
-                }}
-              >
-                {s.g}
-              </button>
+            {#each SNAP_GROUPS as group}
+              <div class="grid grid-cols-4 gap-1">
+                {#each group as s}
+                  <button
+                    class="w-7 h-7 flex items-center justify-center rounded text-zinc-300 hover:bg-indigo-600 hover:text-white text-sm leading-none"
+                    title={s.t}
+                    on:pointerdown={(event) => {
+                      if (event.button !== 0) return;
+                      event.stopPropagation();
+                      dispatch("snap", s.a);
+                      snapOpen = false;
+                    }}
+                  >
+                    {s.g}
+                  </button>
+                {/each}
+              </div>
             {/each}
           </div>
         {/if}

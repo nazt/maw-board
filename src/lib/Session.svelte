@@ -32,6 +32,7 @@
     computeSnap,
     computeSnapTarget,
     detectEdgeSnapAction,
+    isSnapAction,
     type SnapRect,
     type SnapAction,
     type ViewRect,
@@ -196,6 +197,9 @@
   let termGuidesH: number[] = [];
   let edgeSnapPreview: ViewRect | null = null;
   let pendingEdgeSnap: { id: number; action: SnapAction } | null = null;
+  let snapHistory: Record<number, { action: SnapAction; rect: ViewRect }> = {};
+  let layoutModeId: number | null = null;
+  let layoutModeTimer: ReturnType<typeof setTimeout> | null = null;
 
   let resizing = -1; // Terminal ID that is being resized.
   let resizingPointerId: number | null = null; // Track pointer ID during resize gesture.
@@ -766,6 +770,43 @@
     };
   });
 
+  onMount(() => {
+    function handleLayoutKey(event: KeyboardEvent) {
+      if (layoutModeId === null) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        clearLayoutMode();
+        return;
+      }
+
+      const action = layoutKeyAction(event);
+      if (action === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      refreshLayoutModeTimeout();
+
+      const id = shells.some(([sid]) => sid === layoutModeId)
+        ? layoutModeId
+        : activeTerminalId();
+      if (id === null) {
+        clearLayoutMode();
+        return;
+      }
+      layoutModeId = id;
+      void applySnap(id, action);
+    }
+
+    window.addEventListener("keydown", handleLayoutKey, true);
+    return () => {
+      window.removeEventListener("keydown", handleLayoutKey, true);
+      if (layoutModeTimer) {
+        clearTimeout(layoutModeTimer);
+        layoutModeTimer = null;
+      }
+    };
+  });
+
   let focused: number[] = [];
   let lastFocused = -1; // most-recent focused shell; survives blur for snippet paste
   $: setFocus(focused);
@@ -1293,6 +1334,126 @@
     };
   }
 
+  function terminalFootprint(id: number, ws: WsWinsize): ViewRect {
+    const el = termWrappers[id];
+    return {
+      x: ws.x,
+      y: ws.y,
+      w: el && el.offsetWidth > 0 ? el.offsetWidth : ws.cols * 9.6 + 36,
+      h: el && el.offsetHeight > 0 ? el.offsetHeight : ws.rows * 19 + 60,
+    };
+  }
+
+  function rectsClose(a: ViewRect, b: ViewRect, tolerance = 36) {
+    return (
+      Math.abs(a.x - b.x) <= tolerance &&
+      Math.abs(a.y - b.y) <= tolerance &&
+      Math.abs(a.w - b.w) <= tolerance &&
+      Math.abs(a.h - b.h) <= tolerance
+    );
+  }
+
+  function activeTerminalId() {
+    const live = focused[0];
+    if (shells.some(([sid]) => sid === live)) return live;
+    if (shells.some(([sid]) => sid === lastFocused)) return lastFocused;
+    return shells[0]?.[0] ?? null;
+  }
+
+  function cycleSnapAction(id: number, requested: SnapAction, current: ViewRect) {
+    const history = snapHistory[id];
+    if (!history || !rectsClose(history.rect, current)) return requested;
+
+    const advance = (cycle: SnapAction[]) => {
+      const idx = cycle.indexOf(history.action);
+      return idx === -1 ? requested : cycle[(idx + 1) % cycle.length];
+    };
+
+    if (requested === "firstThird") {
+      return advance(["firstThird", "centerThird", "lastThird"]);
+    }
+    if (requested === "lastThird") {
+      return advance(["lastThird", "centerThird", "firstThird"]);
+    }
+    if (requested === "firstTwoThirds") {
+      return advance(["firstTwoThirds", "lastTwoThirds"]);
+    }
+    if (requested === "lastTwoThirds") {
+      return advance(["lastTwoThirds", "firstTwoThirds"]);
+    }
+    return requested;
+  }
+
+  function clearLayoutMode() {
+    layoutModeId = null;
+    if (layoutModeTimer) {
+      clearTimeout(layoutModeTimer);
+      layoutModeTimer = null;
+    }
+  }
+
+  function refreshLayoutModeTimeout() {
+    if (layoutModeTimer) clearTimeout(layoutModeTimer);
+    layoutModeTimer = setTimeout(() => clearLayoutMode(), 15000);
+  }
+
+  function enterLayoutMode(id = activeTerminalId()) {
+    if (!canEdit) {
+      makeToast({ kind: "info", message: "Read-only mode." });
+      return;
+    }
+    if (id === null) {
+      makeToast({ kind: "info", message: "Tap a terminal first." });
+      return;
+    }
+    layoutModeId = id;
+    refreshLayoutModeTimeout();
+    makeToast({
+      kind: "info",
+      message: "Layout mode: arrows/U/I/J/K/F/C/1/2/3, Esc exits.",
+    });
+  }
+
+  function layoutKeyAction(event: KeyboardEvent): SnapAction | null {
+    if (event.altKey || event.ctrlKey || event.metaKey) return null;
+    switch (event.key) {
+      case "ArrowLeft":
+        return "leftHalf";
+      case "ArrowRight":
+        return "rightHalf";
+      case "ArrowUp":
+        return "topHalf";
+      case "ArrowDown":
+        return "bottomHalf";
+      case "u":
+      case "U":
+        return "topLeft";
+      case "i":
+      case "I":
+        return "topRight";
+      case "j":
+      case "J":
+        return "bottomLeft";
+      case "k":
+      case "K":
+        return "bottomRight";
+      case "f":
+      case "F":
+        return "maximize";
+      case "c":
+      case "C":
+        return "center";
+      case "1":
+        return "firstThird";
+      case "2":
+        return "centerThird";
+      case "3":
+        return "lastThird";
+      default:
+        return null;
+    }
+  }
+
   // Snap one terminal into a region of the visible viewport (Rectangle-style),
   // resizing its rows/cols to fill the target. Only the final shared `move` is
   // sent; gated by canEdit like every other layout mutation.
@@ -1304,16 +1465,9 @@
     if (!ws) return;
     const view = visibleWorldRect();
     // Current footprint — real when laid out, cols×cell estimate as fallback.
-    const el = termWrappers[id];
-    const curW = el && el.offsetWidth > 0 ? el.offsetWidth : ws.cols * 9.6 + 36;
-    const curH =
-      el && el.offsetHeight > 0 ? el.offsetHeight : ws.rows * 19 + 60;
-    const target = computeSnapTarget(action, view, {
-      x: ws.x,
-      y: ws.y,
-      w: curW,
-      h: curH,
-    });
+    const currentRect = terminalFootprint(id, ws);
+    const resolvedAction = cycleSnapAction(id, action, currentRect);
+    const target = computeSnapTarget(resolvedAction, view, currentRect);
     // Measure this terminal's rendered cell size (post-zoom screen px -> world
     // px), the same basis tileWindows()/fitToContent() use.
     let cellW = 9.6;
@@ -1355,10 +1509,15 @@
         { ...ws, x: Math.round(target.x), y: Math.round(target.y), cols, rows },
       ],
     });
+    snapHistory = { ...snapHistory, [id]: { action: resolvedAction, rect: target } };
   }
 
   function handleSnapButton(id: number, action: string) {
-    void applySnap(id, action as SnapAction);
+    if (action === "layoutMode") {
+      enterLayoutMode(id);
+    } else if (isSnapAction(action)) {
+      void applySnap(id, action);
+    }
   }
 
   // Tile all open terminals into a uniform layout and recenter on it.
@@ -1705,6 +1864,14 @@
       class="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2 rounded-full bg-red-600/95 text-white text-sm font-semibold shadow-lg pointer-events-none animate-pulse"
     >
       📡 Broadcast ON — typing goes to ALL terminals
+    </div>
+  {/if}
+
+  {#if layoutModeId !== null}
+    <div
+      class="absolute top-14 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600/95 text-white text-sm font-semibold shadow-lg pointer-events-none"
+    >
+      ⌨ Layout terminal {labels[layoutModeId] ?? layoutModeId} · Esc exits
     </div>
   {/if}
 
