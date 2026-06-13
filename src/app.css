@@ -24,4 +24,21 @@
     /* Panel/header color — overridable via Settings (--panel-bg). */
     background-color: var(--panel-bg, rgb(24 24 27 / 0.9));
   }
+
+  /* Touch devices: terminal resize corner needs a finger-sized, visible grip.
+     Uses !important to beat Tailwind's w-5/-bottom-1/-right-1 utilities. */
+  @media (hover: none), (pointer: coarse) {
+    .terminal-resize-handle {
+      width: 44px !important;
+      height: 44px !important;
+      right: -10px !important;
+      bottom: -10px !important;
+      border-bottom-right-radius: 10px;
+      background: linear-gradient(
+        135deg,
+        transparent 0 55%,
+        rgb(129 140 248 / 0.85) 55%
+      );
+    }
+  }
 }

@@ -250,9 +250,14 @@
   <div
     class="flex select-none touch-none"
     on:pointerdown={(event) => {
-      // Ignore taps on the control buttons (close/shrink/expand/presets) so
-      // they fire their own action instead of starting a window drag.
-      if ((event.target instanceof HTMLElement) && event.target.closest("button"))
+      // Ignore real controls (window buttons, size presets, rename input) so
+      // they fire their own action. The title is the biggest part of the
+      // header, so it must stay draggable — a tap without movement still
+      // renames. Hence button:not(.term-title).
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest("button:not(.term-title), input")
+      )
         return;
       dispatch("startMove", event);
     }}
@@ -297,7 +302,7 @@
         />
       {:else}
         <button
-          class="w-full truncate {label ? 'text-indigo-300' : 'text-zinc-300'} hover:text-white"
+          class="term-title w-full truncate {label ? 'text-indigo-300' : 'text-zinc-300'} hover:text-white"
           title={canRename ? "Click to rename" : currentTitle}
           on:click={startRename}
         >

@@ -89,7 +89,7 @@
 
   // Drag state. While dragging, the dragged tile renders at `dragPos` and sends
   // BoardMove on a requestAnimationFrame cadence (contract v2: client throttle).
-  const LONG_PRESS_MS = 400;
+  const LONG_PRESS_MS = 180;
 
   let dragId: string | null = null;
   let dragOffset = [0, 0];
@@ -104,6 +104,9 @@
 
   function onPointerDown(event: PointerEvent, item: BoardItem) {
     if (hasWriteAccess === false) return;
+    // Keep the gesture on the item — don't let the canvas pan-handler also
+    // claim it (caused touch drags to fight board panning).
+    event.stopPropagation();
     // Desktop (mouse): start drag immediately.
     if (event.pointerType === "mouse") {
       startDrag(event, item);
@@ -126,7 +129,8 @@
 
   function onPressMove(event: PointerEvent) {
     if (longPressActive) {
-      onMove(event);
+      // Drag is active — the dedicated onMove listener handles movement.
+      // Calling onMove here too double-processed every pointermove.
       return;
     }
     // If finger moves too far before long-press fires, cancel.
@@ -253,7 +257,29 @@
         </a>
       {/if}
 
+      {#if item.kind === "image"}
+        <a
+          class="download"
+          href={item.dataUrl}
+          download="image"
+          title="Download image"
+          on:pointerdown={(event) => event.stopPropagation()}
+        >
+          <DownloadIcon size="14" />
+        </a>
+      {/if}
+
       {#if hasWriteAccess !== false}
+        <button
+          class="drag-grip"
+          title="Drag to move"
+          on:pointerdown={(event) => {
+            event.stopPropagation();
+            startDrag(event, item);
+          }}
+        >
+          ⠿
+        </button>
         <button
           class="delete"
           title="Remove"
@@ -321,8 +347,18 @@
   }
 
   .download {
-    @apply absolute top-1 left-1 p-0.5 rounded bg-zinc-800/80 text-zinc-300 z-10;
+    @apply absolute bottom-1 left-1 p-0.5 rounded bg-zinc-800/80 text-zinc-300 z-10;
     @apply opacity-0 transition-opacity hover:bg-indigo-600 hover:text-white;
+  }
+
+  .drag-grip {
+    @apply absolute top-1 left-1 z-20 rounded bg-zinc-800/80 text-zinc-300;
+    @apply px-1.5 py-0.5 text-xs leading-none cursor-move touch-none select-none;
+    @apply opacity-0 transition-opacity;
+  }
+
+  .board-item:hover .drag-grip {
+    @apply opacity-100;
   }
 
   .board-item:hover .download {
@@ -350,11 +386,15 @@
   /* Touch devices have no hover — keep board-item controls visible + finger-sized. */
   @media (hover: none), (pointer: coarse) {
     .delete,
-    .download {
+    .download,
+    .drag-grip {
       @apply opacity-100 p-1.5;
     }
     .resize-handle {
-      @apply opacity-90 w-7 h-7;
+      @apply opacity-90 w-11 h-11;
+    }
+    .drag-grip {
+      @apply min-w-[44px] min-h-[44px] grid place-items-center text-base;
     }
   }
 </style>

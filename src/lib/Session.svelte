@@ -1434,8 +1434,9 @@
 
         <!-- Interactable element for resizing (mouse + touch via pointer events) -->
         <div
-          class="absolute w-5 h-5 -bottom-1 -right-1 cursor-nwse-resize touch-none"
+          class="terminal-resize-handle absolute w-5 h-5 -bottom-1 -right-1 cursor-nwse-resize touch-none"
           on:pointerdown={(event) => {
+            event.preventDefault();
             event.stopPropagation();
             if (!canEdit) return;
             const canvasEl = termElements[id].querySelector(".xterm-screen");
