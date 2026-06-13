@@ -353,10 +353,10 @@
           const sig = message.signal as number[] & string[];
           if (sig.length === 3) {
             const [from, to, payload] = sig as unknown as [number, number, string];
-            if (to === userId) rtcMesh?.handleSignal(from, payload);
+            if (to === userId) rtcMesh?.handleSignal(from, payload).catch(() => {});
           } else {
             const [from, payload] = sig as unknown as [number, string];
-            rtcMesh?.handleSignal(from, payload);
+            rtcMesh?.handleSignal(from, payload).catch(() => {});
           }
         } else if (message.shellLatency !== undefined) {
           const shellLatency = Number(message.shellLatency);
@@ -457,7 +457,7 @@
   }
 
   async function handleInput(id: number, data: Uint8Array) {
-    if (lockedForMe) return; // soft lock: swallow keystrokes for locked-out users
+    if (!canEdit) return; // soft lock: swallow keystrokes for locked-out users
     if (counter === 0n) {
       // On the first call, initialize the counter to a random 64-bit integer.
       const array = new Uint8Array(8);
@@ -732,8 +732,11 @@
   })();
   $: boardLocked = !!boardLock?.locked;
   $: lockedForMe = boardLocked && boardLock.ownerId !== userId;
-  // Combined edit permission: have server write access AND not locked out.
-  $: canEdit = hasWriteAccess !== false && !lockedForMe;
+  // Combined edit permission: have CONFIRMED server write access AND not locked
+  // out. Treating `undefined` (permission not yet known) as editable let the UI
+  // make phantom local mutations before perms loaded, which the server then
+  // rejected -> board desync. Require an explicit `true`.
+  $: canEdit = hasWriteAccess === true && !lockedForMe;
 
   function toggleLock() {
     if (hasWriteAccess === false) {
@@ -1091,14 +1094,14 @@
   }
 
   function handleBoardMove(id: string, x: number, y: number) {
-    if (lockedForMe) return;
+    if (!canEdit) return;
     const item = boardItems.find((it) => it.id === id);
     if (item) upsertBoardItem({ ...item, x, y });
     srocket?.send({ boardMove: [id, x, y] });
   }
 
   function handleBoardResize(id: string, w: number, h: number) {
-    if (lockedForMe) return;
+    if (!canEdit) return;
     const item = boardItems.find((it) => it.id === id);
     if (!item) return;
     const resized = { ...item, w, h };
@@ -1107,7 +1110,7 @@
   }
 
   function handleBoardDelete(id: string) {
-    if (lockedForMe) return;
+    if (!canEdit) return;
     removeBoardItem(id);
     srocket?.send({ boardDelete: id });
   }

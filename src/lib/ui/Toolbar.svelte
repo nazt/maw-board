@@ -64,8 +64,8 @@
   let brandMenuOpen = false;
 </script>
 
-<div class="panel inline-block px-3 py-2 max-w-[calc(100vw-12px)] overflow-x-auto toolbar-panel">
-  <div class="flex flex-nowrap items-center select-none">
+<div class="panel inline-block px-3 py-2 max-w-[calc(100vw-12px)]">
+  <div class="flex flex-wrap items-center gap-y-1 select-none">
     <div class="brand-wrap">
       <button
         class="brand"
@@ -101,7 +101,7 @@
     {#if !collapsed}
       <div class="v-divider" />
 
-      <div class="flex space-x-1">
+      <div class="flex flex-wrap gap-1">
       <button
         class="icon-button"
         on:click={() => dispatch("create")}
@@ -309,11 +309,6 @@
 
   .activity {
     @apply absolute top-0.5 right-0.5 p-[4px] bg-red-500 rounded-full;
-  }
-
-  .toolbar-panel {
-    touch-action: pan-x;
-    scrollbar-width: thin;
   }
 
   /* Touch / coarse pointer: ~44px hit areas without growing the icon glyphs. */
