@@ -42,6 +42,7 @@
   import FileExplorer from "./ui/FileExplorer.svelte";
   import MarkdownDoc from "./ui/MarkdownDoc.svelte";
   import SnippetBar from "./ui/SnippetBar.svelte";
+  import YouTubePopup from "./ui/YouTubePopup.svelte";
   import Avatars from "./ui/Avatars.svelte";
   import LiveCursor from "./ui/LiveCursor.svelte";
   import { slide } from "./action/slide";
@@ -84,6 +85,7 @@
   let showExplorer = false; // @hmr:keep
   let showDoc = false; // @hmr:keep
   let showSnippets = false; // @hmr:keep
+  let showYouTube = false; // @hmr:keep
 
   // Auto-hiding toolbar (Apple menu-bar style): fades out after inactivity,
   // reveals when the pointer nears the top edge or hovers it.
@@ -1181,6 +1183,7 @@
       on:networkInfo={() => {
         showNetworkInfo = !showNetworkInfo;
       }}
+      on:youtube={() => (showYouTube = !showYouTube)}
       on:micDown={handleMicDown}
       on:image={handleImage}
       on:stream={handleStream}
@@ -1255,6 +1258,8 @@
   {/if}
 
   <Settings open={settingsOpen} on:close={() => (settingsOpen = false)} />
+
+  <YouTubePopup open={showYouTube} on:close={() => (showYouTube = false)} />
 
   {#if showExplorer}
     <FileExplorer on:close={() => (showExplorer = false)} />

@@ -26,6 +26,7 @@
     TerminalIcon,
     VideoIcon,
     WifiIcon,
+    YoutubeIcon,
   } from "svelte-feather-icons";
 
   export let connected: boolean;
@@ -57,6 +58,7 @@
     image: void;
     stream: void;
     camera: void;
+    youtube: void;
   }>();
 
   let collapsed = false;
@@ -269,7 +271,18 @@
     <div class="v-divider" />
 
     <div class="flex space-x-1">
-      <button class="icon-button" on:click={() => dispatch("networkInfo")}>
+      <button
+        class="icon-button"
+        on:click={() => dispatch("youtube")}
+        title="YouTube — play music"
+      >
+        <YoutubeIcon strokeWidth={1.5} class="p-0.5" />
+      </button>
+      <button
+        class="icon-button"
+        on:click={() => dispatch("networkInfo")}
+        title="Network info"
+      >
         <WifiIcon strokeWidth={1.5} class="p-0.5" />
       </button>
     </div>
