@@ -18,6 +18,7 @@ use http::{header, HeaderMap, HeaderValue, Method, Request, StatusCode, Uri};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+use sysinfo::{Components, System};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
@@ -625,94 +626,43 @@ fn escape_json_string(s: &str) -> String {
     out
 }
 
-/// Sum of the non-idle and total CPU jiffies from the first line of /proc/stat.
-fn read_cpu_jiffies(stat: &str) -> Option<(u64, u64)> {
-    let line = stat.lines().next()?;
-    let mut parts = line.split_whitespace();
-    if parts.next()? != "cpu" {
-        return None;
-    }
-    let vals: Vec<u64> = parts.filter_map(|v| v.parse().ok()).collect();
-    if vals.len() < 4 {
-        return None;
-    }
-    let idle = vals[3] + vals.get(4).copied().unwrap_or(0); // idle + iowait
-    let total: u64 = vals.iter().sum();
-    Some((idle, total))
-}
-
 /// System stats for the workboard status bar: CPU %, RAM, temperature, load.
 async fn sysstat() -> Response {
-    // CPU %: sample /proc/stat twice ~120ms apart.
-    let cpu_pct = async {
-        let a = tokio::fs::read_to_string("/proc/stat").await.ok()?;
-        let (idle_a, total_a) = read_cpu_jiffies(&a)?;
-        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-        let b = tokio::fs::read_to_string("/proc/stat").await.ok()?;
-        let (idle_b, total_b) = read_cpu_jiffies(&b)?;
-        let dt = total_b.saturating_sub(total_a);
-        let di = idle_b.saturating_sub(idle_a);
-        if dt == 0 {
-            return None;
-        }
-        Some(((dt - di) as f64 / dt as f64 * 100.0).round())
-    }
-    .await;
+    let mut system = System::new();
+    system.refresh_memory();
 
-    // RAM from /proc/meminfo (kB).
-    let (mem_total, mem_avail) = {
-        let mut total = 0u64;
-        let mut avail = 0u64;
-        if let Ok(info) = tokio::fs::read_to_string("/proc/meminfo").await {
-            for line in info.lines() {
-                let mut it = line.split_whitespace();
-                match it.next() {
-                    Some("MemTotal:") => {
-                        total = it.next().and_then(|v| v.parse().ok()).unwrap_or(0)
-                    }
-                    Some("MemAvailable:") => {
-                        avail = it.next().and_then(|v| v.parse().ok()).unwrap_or(0)
-                    }
-                    _ => {}
-                }
-            }
-        }
-        (total, avail)
-    };
-    let mem_used = mem_total.saturating_sub(mem_avail);
+    // CPU usage needs two refreshes separated by sysinfo's minimum sample
+    // interval. This replaces the old Linux-only /proc/stat delta.
+    system.refresh_cpu_all();
+    tokio::time::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL).await;
+    system.refresh_cpu_all();
+    let cpu_pct = system.global_cpu_usage().round() as f64;
+
+    let mem_total = system.total_memory();
+    let mem_used = system.used_memory();
     let mem_pct = if mem_total > 0 {
         (mem_used as f64 / mem_total as f64 * 100.0).round()
     } else {
         0.0
     };
 
-    // Temperature: first readable thermal zone (millidegrees C). May be absent
-    // inside an LXC — then null.
-    let mut temp: Option<f64> = None;
-    for zone in 0..8 {
-        let path = format!("/sys/class/thermal/thermal_zone{zone}/temp");
-        if let Ok(raw) = tokio::fs::read_to_string(&path).await {
-            if let Ok(milli) = raw.trim().parse::<f64>() {
-                temp = Some((milli / 1000.0).round());
-                break;
-            }
-        }
-    }
+    // Temperature is best-effort. It can be unavailable inside containers and
+    // on some macOS hardware, so frontend still receives null in that case.
+    let components = Components::new_with_refreshed_list();
+    let temp = components
+        .iter()
+        .filter_map(|component| component.temperature())
+        .find(|value| value.is_finite())
+        .map(|value| f64::from(value).round());
 
-    // Load average (1 min).
-    let load = tokio::fs::read_to_string("/proc/loadavg")
-        .await
-        .ok()
-        .and_then(|s| s.split_whitespace().next().map(String::from))
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(0.0);
+    let load = System::load_average().one;
 
     let temp_json = temp.map(|t| t.to_string()).unwrap_or_else(|| "null".into());
     let body = format!(
         "{{\"cpu\":{},\"memUsedMb\":{},\"memTotalMb\":{},\"memPct\":{},\"temp\":{},\"load\":{}}}",
-        cpu_pct.unwrap_or(0.0),
-        mem_used / 1024,
-        mem_total / 1024,
+        cpu_pct,
+        mem_used / 1024 / 1024,
+        mem_total / 1024 / 1024,
         mem_pct,
         temp_json,
         load,
