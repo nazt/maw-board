@@ -98,6 +98,17 @@ message CloseRequest {
 message CloseResponse {}
 
 // Snapshot of a session, used to restore state for persistence across servers.
+
+message SerializedBoardItem {
+  string id = 1;
+  string kind = 2;
+  int32 x = 3;
+  int32 y = 4;
+  uint32 w = 5;
+  uint32 h = 6;
+  string data_url = 7;
+}
+
 message SerializedSession {
   bytes encrypted_zeros = 1;
   map<uint32, SerializedShell> shells = 2;
@@ -105,6 +116,7 @@ message SerializedSession {
   uint32 next_uid = 4;
   string name = 5;
   optional bytes write_password_hash = 6;
+  repeated SerializedBoardItem board_items = 7;
 }
 
 message SerializedShell {

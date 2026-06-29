@@ -10,6 +10,7 @@ use sshx_core::{
 };
 
 use super::{Metadata, Session, State};
+use crate::web::protocol::BoardItem;
 use crate::web::protocol::WsWinsize;
 
 /// Persist at most this many bytes of output in storage, per shell.
@@ -63,6 +64,20 @@ impl Session {
             next_uid: ids.1 .0,
             name: self.metadata().name.clone(),
             write_password_hash: self.metadata().write_password_hash.clone(),
+            board_items: self
+                .board
+                .lock()
+                .iter()
+                .map(|item| SerializedBoardItem {
+                    id: item.id.clone(),
+                    kind: item.kind.clone(),
+                    x: item.x,
+                    y: item.y,
+                    w: item.w,
+                    h: item.h,
+                    data_url: item.data_url.clone(),
+                })
+                .collect(),
         };
         let data = message.encode_to_vec();
         ensure!(data.len() < MAX_SNAPSHOT_SIZE, "snapshot too large");
@@ -105,10 +120,60 @@ impl Session {
         }
         drop(shells);
         session.source.send_replace(winsizes);
+        {
+            let mut board = session.board.lock();
+            for item in message.board_items {
+                board.push(BoardItem {
+                    id: item.id,
+                    kind: item.kind,
+                    x: item.x,
+                    y: item.y,
+                    w: item.w,
+                    h: item.h,
+                    data_url: item.data_url,
+                });
+            }
+        }
         session
             .counter
             .set_current_values(Sid(message.next_sid), Uid(message.next_uid));
 
         Ok(session)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::web::protocol::BoardItem;
+
+    fn test_metadata() -> Metadata {
+        Metadata {
+            encrypted_zeros: Bytes::from_static(b"zeros"),
+            name: "test-session".to_owned(),
+            write_password_hash: None,
+        }
+    }
+
+    #[test]
+    fn board_items_roundtrip() -> Result<()> {
+        let session = Session::new(test_metadata());
+        let item = BoardItem {
+            id: "img-1".to_owned(),
+            kind: "image".to_owned(),
+            x: 10,
+            y: 20,
+            w: 100,
+            h: 80,
+            data_url: "data:image/png;base64,abc".to_owned(),
+        };
+        session.board_put(item.clone());
+        let data = session.snapshot()?;
+        let restored = Session::restore(&data)?;
+        assert_eq!(restored.board_snapshot(), vec![item]);
+        Ok(())
     }
 }
