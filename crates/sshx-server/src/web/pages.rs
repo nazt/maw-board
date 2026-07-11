@@ -17,6 +17,35 @@ pub fn go_iframe_page(session_url: &str) -> String {
     )
 }
 
+/// Session picker for `/go` when the oracle URL file contains multiple entries.
+pub fn go_picker_page(sessions: &[super::GoSessionLink]) -> String {
+    let items = sessions
+        .iter()
+        .enumerate()
+        .map(|(index, session)| {
+            let label = super::escape_html_text(&session.label);
+            format!("<li><a href=\"/go?session={index}\">{label}<span>Open board</span></a></li>")
+        })
+        .collect::<String>();
+    format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" \
+         content=\"width=device-width, initial-scale=1, viewport-fit=cover\"><meta \
+         name=\"theme-color\" content=\"#0e0e10\"><title>Oracle Board \
+         Picker</title><style>html,body{{margin:0;min-height:100%;background:#0e0e10;color:#\
+         f5f5f5;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe \
+         UI',sans-serif}}body{{display:grid;place-items:center;padding:24px}}main{{width:\
+         min(560px,100%)}}h1{{font-size:24px;font-weight:700;margin:0 0 \
+         8px}}p{{color:#a1a1aa;margin:0 0 \
+         20px}}ul{{list-style:none;margin:0;padding:0;display:grid;gap:10px}}a{{display:flex;\
+         justify-content:space-between;gap:16px;align-items:center;padding:16px 18px;border:1px \
+         solid #3b3b40;border-radius:14px;background:#18181b;color:#fff;text-decoration:none;\
+         font-weight:650}}a:hover,a:focus-visible{{border-color:#f59e0b;outline:none}}span{{color:\
+         #fbbf24;font-size:14px;font-weight:600}}</style></head><body><main><h1>Choose a \
+         board</h1><p>Multiple live sessions are \
+         available.</p><ul>{items}</ul></main></body></html>"
+    )
+}
+
 /// Password gate login form for `/login`.
 pub fn login_form_page(next: &str, failed: bool) -> String {
     let escaped_next = super::escape_html_attr(next);
