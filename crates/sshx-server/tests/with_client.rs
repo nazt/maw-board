@@ -473,6 +473,12 @@ async fn test_board_password_gate() -> Result<()> {
     assert_eq!(resp.status(), http::StatusCode::UNAUTHORIZED);
 
     let resp = client
+        .get(format!("{base}/api/file?path=test.txt"))
+        .send()
+        .await?;
+    assert_eq!(resp.status(), http::StatusCode::UNAUTHORIZED);
+
+    let resp = client
         .get(format!("{base}/api/files?path="))
         .header(
             http::header::COOKIE,
@@ -484,6 +490,17 @@ async fn test_board_password_gate() -> Result<()> {
 
     let resp = client.get(format!("{base}/api/s/demo")).send().await?;
     assert_eq!(resp.status(), http::StatusCode::UNAUTHORIZED);
+
+    let ws_err =
+        tokio_tungstenite::connect_async(format!("ws://{}/api/s/demo", server.local_addr()))
+            .await
+            .expect_err("unauthenticated websocket upgrade should be rejected");
+    match ws_err {
+        tokio_tungstenite::tungstenite::Error::Http(resp) => {
+            assert_eq!(resp.status(), http::StatusCode::UNAUTHORIZED);
+        }
+        err => panic!("expected HTTP 401 for websocket upgrade, got {err:?}"),
+    }
 
     // Wrong passwords do not mint a cookie.
     let resp = client
