@@ -7,63 +7,6 @@
  * srocket plumbing per the contract v2 seam.
  */
 
-/** A push-to-talk microphone controller. */
-export type VoiceController = {
-  /** Begin recording a clip (no-op if already recording). */
-  start(): Promise<void>;
-  /** Stop recording; the finished clip is delivered via the `onClip` callback. */
-  stop(): void;
-  /** Whether a recording is currently in progress. */
-  readonly recording: boolean;
-};
-
-/**
- * Create a push-to-talk voice capturer. Each press/release produces one
- * webm/opus clip, delivered to `onClip` as raw bytes for `{ voice: bytes }`.
- */
-export function createVoiceCapture(
-  onClip: (bytes: Uint8Array) => void,
-): VoiceController {
-  let micStream: MediaStream | null = null;
-  let recorder: MediaRecorder | null = null;
-  let recording = false;
-
-  return {
-    get recording() {
-      return recording;
-    },
-    async start() {
-      if (recording) return;
-      if (!micStream) {
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      }
-      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
-      recorder = new MediaRecorder(micStream, { mimeType: mime });
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data?.size) chunks.push(e.data);
-      };
-      recorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: "audio/webm" });
-        if (blob.size) onClip(new Uint8Array(await blob.arrayBuffer()));
-      };
-      recorder.start();
-      recording = true;
-    },
-    stop() {
-      if (!recording) return;
-      recording = false;
-      try {
-        if (recorder && recorder.state !== "inactive") recorder.stop();
-      } catch {
-        // already stopped
-      }
-    },
-  };
-}
-
 /** Play back a received voice clip (webm/opus bytes from `voiceData`). */
 export function playVoice(bytes: Uint8Array) {
   const url = URL.createObjectURL(new Blob([bytes], { type: "audio/webm" }));
