@@ -91,8 +91,14 @@
 
   function currentResize(event: PointerEvent) {
     const [wx, wy] = normalizePosition(event);
-    const w = Math.max(MIN_W, Math.round(resizeStartW + (wx - resizeStartWorld[0])));
-    const h = Math.max(MIN_H, Math.round(resizeStartH + (wy - resizeStartWorld[1])));
+    const w = Math.max(
+      MIN_W,
+      Math.round(resizeStartW + (wx - resizeStartWorld[0])),
+    );
+    const h = Math.max(
+      MIN_H,
+      Math.round(resizeStartH + (wy - resizeStartWorld[1])),
+    );
     return { w, h };
   }
 
@@ -282,9 +288,14 @@
   async function downloadItem(item: BoardItem) {
     const src = streamSrcs[item.id] ?? item.dataUrl;
     const ext = (mime: string) =>
-      ({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "video/mp4": "mp4", "video/webm": "webm" })[
-        mime
-      ] ?? (item.kind === "video" ? "mp4" : "png");
+      ({
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/webp": "webp",
+        "image/gif": "gif",
+        "video/mp4": "mp4",
+        "video/webm": "webm",
+      }[mime] ?? (item.kind === "video" ? "mp4" : "png"));
     try {
       const res = await fetch(src);
       if (!res.ok) throw new Error(`fetch ${res.status}`);
@@ -455,15 +466,28 @@
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
   <div class="lightbox" on:click={closeLightbox} role="presentation">
     <div class="lightbox-toolbar">
-      <button class="lightbox-btn" title="Download" on:click|stopPropagation={downloadLightbox}>
+      <button
+        class="lightbox-btn"
+        title="Download"
+        on:click|stopPropagation={downloadLightbox}
+      >
         <DownloadIcon size="18" />
       </button>
-      <button class="lightbox-btn" title="Close" on:click|stopPropagation={closeLightbox}>
+      <button
+        class="lightbox-btn"
+        title="Close"
+        on:click|stopPropagation={closeLightbox}
+      >
         <XIcon size="18" />
       </button>
     </div>
     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-    <img class="lightbox-img" src={lightboxSrc} alt="expanded image" on:click|stopPropagation />
+    <img
+      class="lightbox-img"
+      src={lightboxSrc}
+      alt="Expanded preview"
+      on:click|stopPropagation
+    />
   </div>
 {/if}
 
