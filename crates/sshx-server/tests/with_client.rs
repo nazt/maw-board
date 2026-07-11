@@ -14,6 +14,17 @@ use crate::common::*;
 
 pub mod common;
 
+fn test_files_root() -> std::path::PathBuf {
+    static ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    ROOT.get_or_init(|| {
+        let root = std::env::temp_dir().join(format!("sshx-files-root-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("create test files root");
+        std::env::set_var("MAW_FILES_ROOT", &root);
+        root
+    })
+    .clone()
+}
+
 fn auth_cookie_from_response(resp: &reqwest::Response) -> String {
     resp.headers()
         .get(http::header::SET_COOKIE)
@@ -440,6 +451,72 @@ async fn test_files_api() -> Result<()> {
     assert_eq!(resp.status(), http::StatusCode::PAYLOAD_TOO_LARGE);
     tokio::fs::remove_file(&large_path).await.ok();
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_go_single_session_uses_existing_iframe_behavior() -> Result<()> {
+    let oracle_file = std::env::temp_dir().join(format!(
+        "sshx-go-single-{}-{}.txt",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    tokio::fs::write(&oracle_file, "https://example.test/s/alpha#secret\n").await?;
+
+    let mut options = ServerOptions::default();
+    options.oracle_url_file = Some(oracle_file.to_string_lossy().into_owned());
+    let server = TestServer::new_with_options(options).await;
+    let client = reqwest::Client::new();
+    let base = format!("http://{}", server.local_addr());
+
+    let resp = client.get(format!("{base}/go")).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::OK);
+    let body = resp.text().await?;
+    assert!(body.contains("<iframe src=\"https://example.test/s/alpha#secret\""));
+    assert!(body.contains("Oracle Terminal"));
+
+    tokio::fs::remove_file(&oracle_file).await.ok();
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_go_multi_session_picker_and_selection() -> Result<()> {
+    let oracle_file = std::env::temp_dir().join(format!(
+        "sshx-go-multi-{}-{}.txt",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    tokio::fs::write(
+        &oracle_file,
+        "Alpha board\thttps://example.test/s/alpha#one\nhttps://example.test/s/beta#two\n",
+    )
+    .await?;
+
+    let mut options = ServerOptions::default();
+    options.oracle_url_file = Some(oracle_file.to_string_lossy().into_owned());
+    let server = TestServer::new_with_options(options).await;
+    let client = reqwest::Client::new();
+    let base = format!("http://{}", server.local_addr());
+
+    let resp = client.get(format!("{base}/go")).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::OK);
+    let body = resp.text().await?;
+    assert!(body.contains("Choose a board"));
+    assert!(body.contains("Alpha board"));
+    assert!(body.contains(">beta<"));
+    assert!(body.contains("href=\"/go?session=0\""));
+    assert!(body.contains("href=\"/go?session=1\""));
+    assert!(!body.contains("<iframe"));
+
+    let resp = client.get(format!("{base}/go?session=1")).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::OK);
+    let body = resp.text().await?;
+    assert!(body.contains("<iframe src=\"https://example.test/s/beta#two\""));
+
+    let resp = client.get(format!("{base}/go?session=9")).send().await?;
+    assert_eq!(resp.status(), http::StatusCode::NOT_FOUND);
+
+    tokio::fs::remove_file(&oracle_file).await.ok();
     Ok(())
 }
 
